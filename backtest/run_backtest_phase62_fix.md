@@ -1,0 +1,1 @@
+The Phase 6.2 launcher will be validated against the existing Phase 6.1 runner before execution. No Phase 6.2 workflow should be considered a benchmark until the shard outputs are successfully aggregated and compared with a sequential reference on overlapping dates.
