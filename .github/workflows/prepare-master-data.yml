@@ -1,0 +1,100 @@
+name: Prepare Persistent NSE Master Data
+
+on:
+  workflow_dispatch:
+    inputs:
+      lookback_days:
+        description: 'Minimum historical lookback used for initial bootstrap'
+        required: false
+        default: '1500'
+      force_rebuild:
+        description: 'Ignore the existing release snapshot and rebuild from NSE'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: surge-master-data
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore existing persistent snapshot when available
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/master-restore data/cache
+          if gh release view phase62-data --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'Existing phase62-data release found; restoring snapshot.'
+            gh release download phase62-data \
+              --repo "$GITHUB_REPOSITORY" \
+              --pattern 'phase62-master-data.tar.zst' \
+              --dir /tmp/master-restore \
+              --clobber
+            tar -C data -I 'zstd -T0' -xf /tmp/master-restore/phase62-master-data.tar.zst
+          else
+            echo 'No existing phase62-data release. This run will bootstrap the master dataset from NSE.'
+          fi
+
+      - name: Refresh master dataset incrementally
+        run: |
+          python scripts/refresh_master_dataset.py \
+            --lookback-days "${{ inputs.lookback_days || '1500' }}" \
+            ${{ inputs.force_rebuild && '--force-rebuild' || '' }}
+
+      - name: Validate dataset and build release package
+        run: |
+          test -s data/cache/prices.parquet
+          test -s data/cache/fo.parquet
+          test -s data/cache/manifest.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import pandas as pd
+          m = json.loads(Path('data/cache/manifest.json').read_text())
+          p = pd.read_parquet('data/cache/prices.parquet', columns=['date','symbol'])
+          f = pd.read_parquet('data/cache/fo.parquet', columns=['date','symbol'])
+          assert len(p) > 1000 and len(f) > 1000
+          assert m['cash']['rows'] == len(p)
+          assert m['fno']['rows'] == len(f)
+          assert m['cash']['min_date'] <= m['cash']['max_date']
+          print('release manifest validated:', json.dumps(m, indent=2))
+          PY
+          rm -rf data/cache/raw data/cache/fo_raw
+          tar -C data -I 'zstd -T0 -10' -cf /tmp/phase62-master-data.tar.zst \
+            cache/prices.parquet cache/fo.parquet cache/manifest.json
+          sha256sum /tmp/phase62-master-data.tar.zst
+
+      - name: Publish persistent snapshot as release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view phase62-data --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload phase62-data \
+              /tmp/phase62-master-data.tar.zst \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+          else
+            gh release create phase62-data \
+              /tmp/phase62-master-data.tar.zst \
+              --repo "$GITHUB_REPOSITORY" \
+              --title 'Phase 6.2 persistent master NSE dataset' \
+              --notes 'Immutable-style snapshot used by Phase 6.2 and later backtests. Refresh this release through the Prepare Persistent NSE Master Data workflow; backtests do not download NSE history directly.'
+          fi
+          echo 'Persistent master dataset published.'
