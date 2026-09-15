@@ -160,11 +160,7 @@ def expert_rule_score(df: pd.DataFrame, name: str) -> pd.Series:
 
 
 def train_experts(train_df: pd.DataFrame, target_levels=(0.025, 0.03), stop_loss=0.0125, seed=42) -> dict[str, ExpertBundle]:
-    """Train one multi-output forest per expert.
-
-    This preserves both target regressions while sharing the tree ensemble between
-    targets, approximately halving model-fit work versus two independent forests.
-    """
+    """Train one multi-output forest per expert."""
     bundles = {}
     work = train_df.copy()
     work["regime_code"] = regime_labels(work)
@@ -178,7 +174,6 @@ def train_experts(train_df: pd.DataFrame, target_levels=(0.025, 0.03), stop_loss
         valid = work.dropna(subset=xcols + target_cols).copy()
         if len(valid) < 500:
             continue
-
         signal = expert_rule_score(valid, name)
         threshold = float(np.quantile(signal, 0.70))
         X = valid[xcols].fillna(0.0).astype(float)
@@ -218,6 +213,13 @@ def score_experts(bundles: dict[str, ExpertBundle], latest: pd.DataFrame, target
 
 
 def select_trades(scored: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """Filter model outputs and optionally diversify across expert families.
+
+    ``selection_mode=expert_diversified`` gives at most one stock to each expert
+    for a portfolio. This lets the backtest test whether different market
+    situations benefit from different specialists, instead of repeatedly
+    selecting several stocks from the same expert.
+    """
     if scored.empty:
         return scored
     target_levels = [float(x) for x in cfg["target_levels"]]
@@ -236,7 +238,24 @@ def select_trades(scored: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     eligible["predicted_net_return"] = epreds[np.arange(len(eligible)), best_idx]
     eligible["selection_score"] = eligible["predicted_net_return"] + 0.10 * eligible["expert_rule_score"].astype(float)
 
-    # One expert/target decision per stock, equivalent to the previous groupwise
-    # max operation but fully vectorized.
+    mode = str(cfg.get("selection_mode", "ranked"))
+    if mode == "expert_diversified":
+        # First find each expert's best distinct stock. Then rank those expert
+        # representatives. This enforces one stock per expert, which is the
+        # diversification experiment requested for Phase 6.
+        reps = (
+            eligible.sort_values(
+                ["expert", "symbol", "selection_score", "predicted_net_return"],
+                ascending=[True, True, False, False],
+            )
+            .drop_duplicates(["expert", "symbol"], keep="first")
+            .sort_values(["expert", "selection_score", "predicted_net_return"], ascending=[True, False, False])
+            .drop_duplicates("expert", keep="first")
+            .sort_values(["selection_score", "predicted_net_return"], ascending=False)
+            .reset_index(drop=True)
+        )
+        return reps
+
+    # Baseline: one expert/target decision per stock.
     eligible = eligible.sort_values(["symbol", "selection_score", "predicted_net_return"], ascending=[True, False, False])
     return eligible.drop_duplicates("symbol", keep="first").sort_values(["selection_score", "predicted_net_return"], ascending=False).reset_index(drop=True)
