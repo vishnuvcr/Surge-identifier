@@ -27,9 +27,16 @@ def _safe_div(a, b):
 
 def build_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.sort_values(["symbol", "date"]).copy()
-    for col, default in [("fut_oi", 0.0), ("fut_oi_change", 0.0), ("fut_volume", 0.0), ("pcr", 1.0)]:
+    # F&O columns can arrive from parquet/merge as object dtype when missing
+    # values or mixed representations are present. Coerce them before any
+    # rolling numeric aggregation; otherwise pandas raises "No numeric types
+    # to aggregate" on the PCR/OI rolling windows.
+    fno_defaults = {"fut_oi": 0.0, "fut_oi_change": 0.0, "fut_volume": 0.0, "pcr": 1.0}
+    for col, default in fno_defaults.items():
         if col not in df.columns:
             df[col] = default
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+        df[col] = df[col].fillna(default)
     g = df.groupby("symbol", group_keys=False)
     close = df["close"].astype(float)
     opn = df["open"].astype(float)
