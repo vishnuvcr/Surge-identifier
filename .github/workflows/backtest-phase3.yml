@@ -41,6 +41,13 @@ jobs:
       - name: Run Phase 3 backtest
         run: python backtest/run_backtest_phase3.py
 
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: surge-backtest-phase3-results
+          path: backtest/results/phase3
+          retention-days: 30
+
       - name: Commit Phase 3 results
         run: |
           git config user.name "github-actions[bot]"
@@ -51,11 +58,6 @@ jobs:
             exit 0
           fi
           git commit -m "Update Phase 3 backtest results"
+          git fetch origin backtest-paytm-intraday
+          git rebase origin/backtest-paytm-intraday
           git push origin HEAD:backtest-paytm-intraday
-
-      - name: Upload results
-        uses: actions/upload-artifact@v4
-        with:
-          name: surge-backtest-phase3-results
-          path: backtest/results/phase3
-          retention-days: 30
