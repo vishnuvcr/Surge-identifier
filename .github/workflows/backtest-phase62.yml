@@ -2,14 +2,6 @@ name: Surge Strategy Backtest Phase 6.2
 
 on:
   workflow_dispatch:
-  push:
-    branches: [phase6.2-persistent-master-data]
-    paths:
-      - 'src/**'
-      - 'backtest/**'
-      - 'config.yaml'
-      - 'requirements.txt'
-      - '.github/workflows/backtest-phase62.yml'
 
 concurrency:
   group: surge-phase62-${{ github.ref }}
