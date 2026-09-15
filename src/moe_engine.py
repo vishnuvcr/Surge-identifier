@@ -38,7 +38,8 @@ SIGNAL_CUTOFF_MINUTE = 30
 class ExpertBundle:
     name: str
     features: list[str]
-    models: dict[float, RandomForestRegressor]
+    model: RandomForestRegressor
+    target_keys: list[str]
     score_threshold: float
     training_rows: int
 
@@ -159,34 +160,39 @@ def expert_rule_score(df: pd.DataFrame, name: str) -> pd.Series:
 
 
 def train_experts(train_df: pd.DataFrame, target_levels=(0.025, 0.03), stop_loss=0.0125, seed=42) -> dict[str, ExpertBundle]:
+    """Train one multi-output forest per expert.
+
+    This preserves both target regressions while sharing the tree ensemble between
+    targets, approximately halving model-fit work versus two independent forests.
+    """
     bundles = {}
     work = train_df.copy()
     work["regime_code"] = regime_labels(work)
+    target_keys = [str(t).replace(".", "p").lstrip("0") for t in target_levels]
+    target_cols = [f"expert_ret_{key}" for key in target_keys]
+
     for name, cols in EXPERT_FEATURES.items():
         xcols = list(dict.fromkeys(cols + ["regime_code"]))
         if name == "event" and float(work[EVENT_FEATURES].abs().sum().sum()) == 0:
             continue
-        valid = work.dropna(subset=xcols + [f"expert_ret_{str(t).replace('.', 'p').lstrip('0')}" for t in target_levels]).copy()
+        valid = work.dropna(subset=xcols + target_cols).copy()
         if len(valid) < 500:
             continue
-        models = {}
+
         signal = expert_rule_score(valid, name)
         threshold = float(np.quantile(signal, 0.70))
         X = valid[xcols].fillna(0.0).astype(float)
-        for target in target_levels:
-            key = str(target).replace(".", "p").lstrip("0")
-            y = valid[f"expert_ret_{key}"].clip(-0.10, 0.10)
-            model = RandomForestRegressor(
-                n_estimators=120,
-                max_depth=8,
-                min_samples_leaf=30,
-                max_features=0.75,
-                random_state=seed + EXPERT_SEEDS[name] + int(target * 1000),
-                n_jobs=-1,
-            )
-            model.fit(X, y)
-            models[target] = model
-        bundles[name] = ExpertBundle(name, xcols, models, threshold, len(valid))
+        y = valid[target_cols].astype(float).clip(-0.10, 0.10)
+        model = RandomForestRegressor(
+            n_estimators=120,
+            max_depth=8,
+            min_samples_leaf=30,
+            max_features=0.75,
+            random_state=seed + EXPERT_SEEDS[name],
+            n_jobs=-1,
+        )
+        model.fit(X, y)
+        bundles[name] = ExpertBundle(name, xcols, model, target_keys, threshold, len(valid))
     return bundles
 
 
@@ -194,14 +200,20 @@ def score_experts(bundles: dict[str, ExpertBundle], latest: pd.DataFrame, target
     work = latest.copy()
     work["regime_code"] = regime_labels(work)
     output = []
+    target_keys = [str(t).replace(".", "p").lstrip("0") for t in target_levels]
     for name, bundle in bundles.items():
-        part = work.copy()
+        part = work[["symbol"] + list(dict.fromkeys(bundle.features))].copy()
+        part["regime_code"] = work["regime_code"].to_numpy()
         part["expert"] = name
-        part["expert_rule_score"] = expert_rule_score(part, name)
+        part["expert_rule_score"] = expert_rule_score(work, name).to_numpy()
         X = part[bundle.features].fillna(0.0).astype(float)
-        for target in target_levels:
-            part[f"pred_{str(target).replace('.', 'p').lstrip('0')}"] = bundle.models[target].predict(X)
-        output.append(part[["symbol", "expert", "expert_rule_score", "regime_code"] + [f"pred_{str(t).replace('.', 'p').lstrip('0')}" for t in target_levels]])
+        pred = np.asarray(bundle.model.predict(X), dtype=float)
+        if pred.ndim == 1:
+            pred = pred.reshape(-1, 1)
+        for i, key in enumerate(bundle.target_keys):
+            if key in target_keys:
+                part[f"pred_{key}"] = pred[:, i]
+        output.append(part[["symbol", "expert", "expert_rule_score", "regime_code"] + [f"pred_{key}" for key in target_keys]])
     return pd.concat(output, ignore_index=True) if output else pd.DataFrame()
 
 
@@ -209,27 +221,22 @@ def select_trades(scored: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     if scored.empty:
         return scored
     target_levels = [float(x) for x in cfg["target_levels"]]
-    rows = []
-    for symbol, g in scored.groupby("symbol"):
-        eligible = g.copy()
-        candidates = []
-        for _, row in eligible.iterrows():
-            for target in target_levels:
-                key = str(target).replace(".", "p").lstrip("0")
-                pred = float(row[f"pred_{key}"])
-                hurdle = cfg["cost_hurdle_pct"] + cfg["risk_penalty_pct"]
-                if pred <= hurdle:
-                    continue
-                candidates.append({
-                    "symbol": symbol,
-                    "expert": row.expert,
-                    "expert_rule_score": float(row.expert_rule_score),
-                    "regime_code": int(row.regime_code),
-                    "target": target,
-                    "predicted_net_return": pred,
-                    "selection_score": pred + 0.10 * float(row.expert_rule_score),
-                })
-        if candidates:
-            best = max(candidates, key=lambda x: (x["selection_score"], x["predicted_net_return"]))
-            rows.append(best)
-    return pd.DataFrame(rows).sort_values(["selection_score", "predicted_net_return"], ascending=False) if rows else pd.DataFrame()
+    target_keys = [str(t).replace(".", "p").lstrip("0") for t in target_levels]
+    preds = scored[[f"pred_{key}" for key in target_keys]].to_numpy(dtype=float)
+    hurdle = float(cfg["cost_hurdle_pct"]) + float(cfg["risk_penalty_pct"])
+    best_idx = np.argmax(preds, axis=1)
+    best_pred = preds[np.arange(len(scored)), best_idx]
+    eligible = scored.loc[(scored["expert_rule_score"].to_numpy(dtype=float) >= 0.70) & (best_pred > hurdle)].copy()
+    if eligible.empty:
+        return eligible
+
+    epreds = eligible[[f"pred_{key}" for key in target_keys]].to_numpy(dtype=float)
+    best_idx = np.argmax(epreds, axis=1)
+    eligible["target"] = np.asarray(target_levels)[best_idx]
+    eligible["predicted_net_return"] = epreds[np.arange(len(eligible)), best_idx]
+    eligible["selection_score"] = eligible["predicted_net_return"] + 0.10 * eligible["expert_rule_score"].astype(float)
+
+    # One expert/target decision per stock, equivalent to the previous groupwise
+    # max operation but fully vectorized.
+    eligible = eligible.sort_values(["symbol", "selection_score", "predicted_net_return"], ascending=[True, False, False])
+    return eligible.drop_duplicates("symbol", keep="first").sort_values(["selection_score", "predicted_net_return"], ascending=False).reset_index(drop=True)
