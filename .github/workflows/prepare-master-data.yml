@@ -12,6 +12,15 @@ on:
         required: false
         type: boolean
         default: false
+  push:
+    branches: [phase6.2-persistent-master-data]
+    paths:
+      - '.github/workflows/prepare-master-data.yml'
+      - 'scripts/refresh_master_dataset.py'
+      - 'src/nse_data.py'
+      - 'src/nse_fo.py'
+      - 'backtest/config_phase62.yaml'
+      - 'requirements.txt'
 
 permissions:
   contents: write
@@ -74,6 +83,7 @@ jobs:
           assert m['cash']['rows'] == len(p)
           assert m['fno']['rows'] == len(f)
           assert m['cash']['min_date'] <= m['cash']['max_date']
+          assert m['fno']['min_date'] <= m['fno']['max_date']
           print('release manifest validated:', json.dumps(m, indent=2))
           PY
           rm -rf data/cache/raw data/cache/fo_raw
@@ -95,6 +105,6 @@ jobs:
               /tmp/phase62-master-data.tar.zst \
               --repo "$GITHUB_REPOSITORY" \
               --title 'Phase 6.2 persistent master NSE dataset' \
-              --notes 'Immutable-style snapshot used by Phase 6.2 and later backtests. Refresh this release through the Prepare Persistent NSE Master Data workflow; backtests do not download NSE history directly.'
+              --notes 'Persistent snapshot used by Phase 6.2 and later backtests. Refresh through the Prepare Persistent NSE Master Data workflow; backtests do not download NSE history directly.'
           fi
           echo 'Persistent master dataset published.'
