@@ -1,0 +1,90 @@
+name: Surge Strategy Backtest Phase 6.4
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: surge-phase64
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: phase6.4-parallel-regime-moe
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Verify repository import path
+        run: |
+          python - <<'PY'
+          import sys
+          from pathlib import Path
+          root = Path.cwd().resolve()
+          if str(root) not in sys.path:
+              sys.path.insert(0, str(root))
+          import src
+          print('Repository import OK:', root)
+          PY
+      - name: Restore persistent NSE master dataset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/master-release data/cache
+          gh release download phase62-data \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern 'phase62-master-data.tar.zst' \
+            --dir /tmp/master-release \
+            --clobber
+          tar -C data -I 'zstd -T0' -xf /tmp/master-release/phase62-master-data.tar.zst
+      - name: Validate persistent master dataset
+        run: |
+          test -s data/cache/prices.parquet
+          test -s data/cache/fo.parquet
+          test -s data/cache/manifest.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import pandas as pd
+          m = json.loads(Path('data/cache/manifest.json').read_text())
+          p = pd.read_parquet('data/cache/prices.parquet', columns=['date','symbol'])
+          f = pd.read_parquet('data/cache/fo.parquet', columns=['date','symbol'])
+          assert len(p) > 1000 and len(f) > 1000
+          assert int(m['cash']['rows']) == len(p)
+          assert int(m['fno']['rows']) == len(f)
+          print('Master dataset OK:', len(p), 'cash rows;', len(f), 'F&O rows')
+          PY
+      - name: Run Phase 6.4 parallel regime-weighted MoE
+        env:
+          PHASE64_OUTPUT_DIR: backtest/results/phase64
+        run: python backtest/run_backtest_phase64.py
+      - name: Validate Phase 6.4 results
+        run: |
+          test -s backtest/results/phase64/summary.json
+          python - <<'PY'
+          import json
+          x = json.load(open('backtest/results/phase64/summary.json'))
+          assert x['phase'] == '6.4'
+          assert x['engine'] == 'parallel_experts_regime_weighted_ensemble'
+          assert 'diagnostics' in x and 'summaries' in x
+          print('Phase 6.4 result validation passed')
+          print('trade_days=', x['diagnostics']['trade_days'])
+          print('selected_rows=', x['diagnostics']['selected_rows'])
+          print('experts per refit=', [len(r['experts']) for r in x['diagnostics']['expert_refits']])
+          PY
+      - name: Upload Phase 6.4 results
+        uses: actions/upload-artifact@v4
+        with:
+          name: surge-phase64-results
+          path: backtest/results/phase64/
+          if-no-files-found: error
