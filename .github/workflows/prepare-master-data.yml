@@ -1,5 +1,6 @@
 name: Prepare Persistent NSE Master Data
 
+# Bootstrap/refresh the persistent Phase 6.2 dataset before dispatching the backtest.
 on:
   workflow_dispatch:
     inputs:
