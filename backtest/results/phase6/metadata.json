@@ -13,7 +13,7 @@
     "corporate_actions": false
   },
   "monthly_refits": 9,
-  "runtime_seconds": 3865.925665863,
+  "runtime_seconds": 463.63088217999996,
   "anti_lookahead": [
     "Training rows use labels whose next-session label date is strictly before the signal day.",
     "All strategy models are refit monthly using only prior sessions.",
