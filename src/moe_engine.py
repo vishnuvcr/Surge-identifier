@@ -19,7 +19,6 @@ EVENT_FEATURES = [
     "corporate_action_flag", "corporate_action_score",
 ]
 COMMON = ["market_ret5", "market_breadth", "volatility20", "cross_ret_rank", "cross_vol_rank"]
-
 EXPERT_FEATURES = {
     "momentum": COMMON + ["ret3", "ret5", "ret10", "ret20", "trend20", "trend60", "relvol20"],
     "breakout": COMMON + ["dist_high20", "dist_high60", "close_pos", "range_pct", "relvol5", "relvol20", "gap"],
@@ -29,8 +28,10 @@ EXPERT_FEATURES = {
     "relative_strength": COMMON + ["ret1", "ret3", "ret5", "ret10", "trend20", "trend60", "market_ret1"],
     "event": COMMON + ["gap", "relvol5", "relvol20"] + EVENT_FEATURES,
 }
-
 EXPERTS = tuple(EXPERT_FEATURES)
+EXPERT_SEEDS = {name: 1000 + i * 137 for i, name in enumerate(EXPERTS)}
+SIGNAL_CUTOFF_HOUR = 15
+SIGNAL_CUTOFF_MINUTE = 30
 
 
 @dataclass
@@ -42,24 +43,36 @@ class ExpertBundle:
     training_rows: int
 
 
+def _signal_date_from_timestamp(ts: pd.Series) -> pd.Series:
+    local = pd.to_datetime(ts, errors="coerce", utc=True).dt.tz_convert("Asia/Kolkata")
+    return local.dt.normalize()
+
+
+def _filter_to_eod_cutoff(ts: pd.Series) -> pd.Series:
+    local = pd.to_datetime(ts, errors="coerce", utc=True).dt.tz_convert("Asia/Kolkata")
+    cutoff = local.dt.normalize() + pd.Timedelta(hours=SIGNAL_CUTOFF_HOUR, minutes=SIGNAL_CUTOFF_MINUTE)
+    return local <= cutoff
+
+
 def add_point_in_time_events(df: pd.DataFrame, news: pd.DataFrame | None = None, corp: pd.DataFrame | None = None) -> pd.DataFrame:
     out = df.copy()
     for col in EVENT_FEATURES:
         out[col] = 0.0
     if out.empty:
         return out
+    out["date"] = pd.to_datetime(out["date"]).dt.normalize()
 
     if news is not None and not news.empty:
         n = news.copy()
-        n["timestamp"] = pd.to_datetime(n["timestamp"], errors="coerce", utc=True).dt.tz_convert(None)
+        n["timestamp"] = pd.to_datetime(n["timestamp"], errors="coerce", utc=True)
         n["symbol"] = n["symbol"].astype(str)
         n = n.dropna(subset=["timestamp", "symbol"])
+        n = n[_filter_to_eod_cutoff(n["timestamp"])]
         if "sentiment" not in n:
             n["sentiment"] = 0.0
         if "importance" not in n:
             n["importance"] = 1.0
-        if "signal_date" not in n:
-            n["signal_date"] = n["timestamp"].dt.normalize()
+        n["signal_date"] = _signal_date_from_timestamp(n["timestamp"])
         agg = n.groupby(["signal_date", "symbol"], as_index=False).agg(
             news_sentiment_24h=("sentiment", "mean"),
             news_count_24h=("symbol", "size"),
@@ -67,19 +80,19 @@ def add_point_in_time_events(df: pd.DataFrame, news: pd.DataFrame | None = None,
         )
         out = out.merge(agg, left_on=["date", "symbol"], right_on=["signal_date", "symbol"], how="left")
         for col in ["news_sentiment_24h", "news_count_24h", "news_importance_24h"]:
-            out[col] = out[col + "_y"].fillna(0.0) if col + "_y" in out else out[col].fillna(0.0)
-        drop_cols = [c for c in ["signal_date", "news_sentiment_24h_x", "news_count_24h_x", "news_importance_24h_x", "news_sentiment_24h_y", "news_count_24h_y", "news_importance_24h_y"] if c in out]
-        out = out.drop(columns=drop_cols, errors="ignore")
+            out[col] = out[col].fillna(0.0)
+        out = out.drop(columns=["signal_date"], errors="ignore")
 
     if corp is not None and not corp.empty:
         c = corp.copy()
         ts_col = "announcement_timestamp" if "announcement_timestamp" in c.columns else "timestamp"
-        c[ts_col] = pd.to_datetime(c[ts_col], errors="coerce", utc=True).dt.tz_convert(None)
+        c[ts_col] = pd.to_datetime(c[ts_col], errors="coerce", utc=True)
         c["symbol"] = c["symbol"].astype(str)
         c = c.dropna(subset=[ts_col, "symbol"])
+        c = c[_filter_to_eod_cutoff(c[ts_col])]
         if "score" not in c:
             c["score"] = 1.0
-        c["signal_date"] = c[ts_col].dt.normalize()
+        c["signal_date"] = _signal_date_from_timestamp(c[ts_col])
         agg = c.groupby(["signal_date", "symbol"], as_index=False).agg(
             corporate_action_flag=("symbol", "size"),
             corporate_action_score=("score", "sum"),
@@ -99,7 +112,6 @@ def add_forward_targets(df: pd.DataFrame, target_levels: tuple[float, ...], stop
     out["next_high_phase6"] = g["high"].shift(-1)
     out["next_low_phase6"] = g["low"].shift(-1)
     out["next_close_phase6"] = g["close"].shift(-1)
-
     for target in target_levels:
         name = str(target).replace(".", "p").lstrip("0")
         op = out["next_open_phase6"].astype(float)
@@ -108,17 +120,11 @@ def add_forward_targets(df: pd.DataFrame, target_levels: tuple[float, ...], stop
         cl = out["next_close_phase6"].astype(float)
         t = op * (1 + target)
         s = op * (1 - stop_loss)
-        ret_target = target
-        ret_stop = -stop_loss
         both = (hi >= t) & (lo <= s)
         hit_t = hi >= t
         hit_s = lo <= s
         close_ret = cl / op - 1
-        out[f"expert_ret_{name}"] = np.select(
-            [both, hit_t, hit_s],
-            [ret_stop, ret_target, ret_stop],
-            default=close_ret,
-        )
+        out[f"expert_ret_{name}"] = np.select([both, hit_t, hit_s], [-stop_loss, target, -stop_loss], default=close_ret)
     return out
 
 
@@ -175,7 +181,7 @@ def train_experts(train_df: pd.DataFrame, target_levels=(0.025, 0.03), stop_loss
                 max_depth=8,
                 min_samples_leaf=30,
                 max_features=0.75,
-                random_state=seed + hash(name) % 10000 + int(target * 1000),
+                random_state=seed + EXPERT_SEEDS[name] + int(target * 1000),
                 n_jobs=-1,
             )
             model.fit(X, y)
@@ -205,9 +211,7 @@ def select_trades(scored: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     target_levels = [float(x) for x in cfg["target_levels"]]
     rows = []
     for symbol, g in scored.groupby("symbol"):
-        eligible = g[g.expert_rule_score >= g.groupby("expert").expert_rule_score.transform("max").fillna(0)].copy()
-        if eligible.empty:
-            continue
+        eligible = g.copy()
         candidates = []
         for _, row in eligible.iterrows():
             for target in target_levels:
