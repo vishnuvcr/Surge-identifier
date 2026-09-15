@@ -1,0 +1,114 @@
+name: Surge Strategy Backtest Phase 6.2
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [phase6.2-parallel-long-history]
+    paths:
+      - 'src/**'
+      - 'backtest/**'
+      - 'config.yaml'
+      - 'requirements.txt'
+      - '.github/workflows/backtest-phase62.yml'
+
+concurrency:
+  group: surge-phase62-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      blocks: ${{ steps.blocks.outputs.blocks }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: blocks
+        name: Build monthly walk-forward blocks
+        shell: bash
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          # Current repository data ends in 2026. The backtest runner will clamp
+          # to available data. We intentionally use six coarse blocks so that each
+          # matrix job carries several months and amortizes setup/download overhead.
+          blocks=[]
+          for y,m in [(2025,1),(2025,7),(2026,1),(2026,4),(2026,7)]:
+              if m==1:
+                  end_month=6
+              elif m==7:
+                  end_month=12
+              else:
+                  end_month=m+2
+              # End is exclusive and may be clipped by the engine.
+              start=f"{y:04d}-{m:02d}-01"
+              ey=y if end_month<=12 else y+1
+              em=end_month if end_month<=12 else 1
+              blocks.append({"start":start,"end":f"{ey:04d}-{em:02d}-01"})
+          print("blocks="+json.dumps(json.dumps(blocks,separators=(',',':'))))
+          PY
+
+  backtest:
+    needs: discover
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        block: ${{ fromJSON(needs.discover.outputs.blocks) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run Phase 6.2 block
+        env:
+          PHASE62_BLOCK_START: ${{ matrix.block.start }}
+          PHASE62_BLOCK_END: ${{ matrix.block.end }}
+          PHASE62_OUTPUT_DIR: backtest/results/phase62/${{ matrix.block.start }}_${{ matrix.block.end }}
+        run: python backtest/run_backtest_phase62.py
+      - name: Upload block results
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase62-${{ matrix.block.start }}-${{ matrix.block.end }}
+          path: backtest/results/phase62/${{ matrix.block.start }}_${{ matrix.block.end }}/
+          if-no-files-found: error
+
+  aggregate:
+    needs: backtest
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Download all Phase 6.2 block results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: phase62-*
+          path: backtest/results/phase62/blocks
+          merge-multiple: false
+      - name: Validate blocks and aggregate
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          root=Path('backtest/results/phase62/blocks')
+          files=sorted(root.rglob('*.csv'))
+          print(f'Found {len(files)} CSV result files across {len(list(root.iterdir())) if root.exists() else 0} block artifacts')
+          for f in files:
+              print(f, f.stat().st_size)
+          print('Phase 6.2 block aggregation placeholder: the first implementation preserves each block ledger separately for auditability.')
+          print('Chronological aggregation must be performed only after verifying identical execution/cost schemas across blocks.')
+          PY
+      - name: Upload Phase 6.2 combined artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: surge-phase62-results
+          path: backtest/results/phase62/blocks/
