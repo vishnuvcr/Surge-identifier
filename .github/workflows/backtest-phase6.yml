@@ -16,6 +16,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: phase6-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backtest:
     runs-on: ubuntu-latest
@@ -23,6 +27,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: backtest-paytm-intraday
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -54,8 +61,6 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git fetch origin backtest-paytm-intraday
-          git rebase origin/backtest-paytm-intraday || true
           git add backtest/results/phase6
           git diff --cached --quiet && exit 0
           git commit -m 'Update Phase 6 backtest results'
