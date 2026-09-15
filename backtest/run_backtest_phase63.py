@@ -15,7 +15,8 @@ if str(ROOT) not in sys.path:
 
 from backtest.run_backtest_phase61 import execute, liquidity_table, load_events, summary
 from src.moe_engine import add_point_in_time_events
-from src.moe_engine_phase63 import add_cpr_features, add_targets, route_and_rank, score_experts, train_experts, train_router
+from src.moe_engine_phase63 import add_cpr_features, add_targets, score_experts, train_experts, train_router
+from src.moe_engine_phase63_safe import route_and_rank
 from src.nse_data import load_prices
 from src.nse_fo import load_fo
 from src.surge_model import build_features
