@@ -133,9 +133,19 @@ def train_mfe_walk_forward(df: pd.DataFrame, validation_days: int = 60, seed: in
         calibrated = np.asarray(cal.predict(raw), dtype=float)
         calibration[str(t)] = cal
         hit_rate[str(t)] = float(np.mean((calibrated >= 0.5) == actual))
-        brier[str(t)] = {"raw": _brier(actual, raw), "calibrated": _brier(actual, calibrated), "base_rate": float(actual.mean())}
+        brier[str(t)] = {
+            "raw": _brier(actual, raw),
+            "calibrated": _brier(actual, calibrated),
+            "base_rate": float(actual.mean()),
+        }
 
     return MFEModelBundle(model, scaler, mae, ric, hit_rate, calibration, brier)
+
+
+def _target_key(t: float) -> str:
+    if t == 0.025:
+        return "p_hit_2_5"
+    return f"p_hit_{int(t * 100)}"
 
 
 def _score(bundle: MFEModelBundle, latest: pd.DataFrame, calibrated: bool) -> pd.DataFrame:
@@ -151,8 +161,7 @@ def _score(bundle: MFEModelBundle, latest: pd.DataFrame, calibrated: bool) -> pd
         p = probs[:, i]
         if calibrated:
             p = np.asarray(bundle.calibration[str(t)].predict(p), dtype=float)
-        key = f"p_hit_{str(t).rstrip('0').rstrip('.').replace('.', '_')}" if t == 0.025 else f"p_hit_{int(t*100)}"
-        work[key] = np.clip(p, 0.0, 1.0)
+        work[_target_key(t)] = np.clip(p, 0.0, 1.0)
     return work
 
 
