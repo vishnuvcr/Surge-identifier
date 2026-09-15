@@ -1,0 +1,10 @@
+{
+  "workflow": "Surge Strategy Backtest Phase 6.2",
+  "phase": "backtest",
+  "status": "running",
+  "run_id": 35015544895,
+  "run_attempt": 1,
+  "commit": "6841aac4b4e648211901ec99f0d49ce1719cdf4c",
+  "branch": "phase6.2-persistent-master-data",
+  "updated_at_utc": "2026-09-15T19:48:35.295732+00:00"
+}
