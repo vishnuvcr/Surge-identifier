@@ -15,6 +15,10 @@ concurrency:
   group: surge-phase62-${{ github.ref }}
   cancel-in-progress: false
 
+permissions:
+  contents: write
+  actions: write
+
 jobs:
   prepare-data:
     runs-on: ubuntu-latest
@@ -30,6 +34,31 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: pip install -r requirements.txt
+      - name: Publish Phase 6.2 running status
+        run: |
+          mkdir -p reports
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          p = Path('reports/phase62_status.json')
+          payload = {
+              'workflow': 'Surge Strategy Backtest Phase 6.2',
+              'phase': 'backtest',
+              'status': 'running',
+              'run_id': int(os.environ['GITHUB_RUN_ID']),
+              'run_attempt': int(os.environ['GITHUB_RUN_ATTEMPT']),
+              'commit': os.environ['GITHUB_SHA'],
+              'branch': os.environ['GITHUB_REF_NAME'],
+              'updated_at_utc': datetime.now(timezone.utc).isoformat(),
+          }
+          p.write_text(json.dumps(payload, indent=2) + '\n')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add reports/phase62_status.json
+          git diff --cached --quiet || git commit -m 'Phase 6.2: publish backtest running status'
+          git push
       - name: Validate code and config before data work
         run: python backtest/phase62_preflight.py --config-only
       - name: Restore persistent master dataset release
@@ -211,6 +240,40 @@ jobs:
               assert {'diagnostics','summaries','runtime_seconds'} <= set(x), f'Invalid {p}'
               print(p, 'OK')
           PY
+      - name: Publish Phase 6.2 completion status
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          mkdir -p reports
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          root = Path('backtest/results/phase62/blocks')
+          summaries = sorted(root.rglob('summary.json'))
+          shard_runtime = []
+          for p in summaries:
+              x = json.loads(p.read_text())
+              shard_runtime.append(float(x.get('runtime_seconds', 0.0)))
+          payload = {
+              'workflow': 'Surge Strategy Backtest Phase 6.2',
+              'phase': 'backtest',
+              'status': 'completed',
+              'run_id': int(os.environ['GITHUB_RUN_ID']),
+              'run_attempt': int(os.environ['GITHUB_RUN_ATTEMPT']),
+              'commit': os.environ['GITHUB_SHA'],
+              'branch': os.environ['GITHUB_REF_NAME'],
+              'shards': len(summaries),
+              'max_shard_runtime_seconds': max(shard_runtime) if shard_runtime else 0.0,
+              'updated_at_utc': datetime.now(timezone.utc).isoformat(),
+          }
+          Path('reports/phase62_status.json').write_text(json.dumps(payload, indent=2) + '\n')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add reports/phase62_status.json
+          git commit -m 'Phase 6.2: publish backtest completion status'
+          git push
       - name: Upload combined shard artifacts
         uses: actions/upload-artifact@v4
         with:
