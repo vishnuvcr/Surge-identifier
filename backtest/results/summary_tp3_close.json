@@ -1,0 +1,34 @@
+{
+  "mode": "tp3_close",
+  "initial_capital": 100000,
+  "final_equity": 110016.94444257287,
+  "net_pnl": 10016.94444257286,
+  "net_return_pct": 0.10016944442572862,
+  "gross_pnl": 10524.966935318924,
+  "fees": 508.0224927460641,
+  "trade_count": 6,
+  "win_rate": 0.8333333333333334,
+  "max_drawdown_pct": -0.04400299323117873,
+  "profitable_days": 5,
+  "losing_days": 1,
+  "avg_trades_per_day": 1.0,
+  "anti_lookahead": [
+    "For each prediction month, training uses only feature rows dated strictly before the prediction day.",
+    "Training rows are additionally removed when their next-session label outcome would occur on or after the prediction day.",
+    "The model threshold is selected only inside the historical training/validation window preceding that prediction month.",
+    "Liquidity uses only turnover observations from the trailing sessions strictly before each signal date.",
+    "The signal is generated from EOD data; entry occurs on the next trading session open.",
+    "Next-day OHLC is used only after the signal is fixed to calculate realized trade outcome.",
+    "Capital is split equally across the selected trades using starting equity for that day; no leverage is used.",
+    "Daily bars cannot reconstruct the exact intraday path; the +3% target scenario is therefore reported separately."
+  ],
+  "costs": {
+    "brokerage_per_order": 20.0,
+    "exchange_turnover_rate": 3.45e-05,
+    "stt_sell_rate": 0.00025,
+    "sebi_turnover_rate": 1e-06,
+    "stamp_buy_rate": 3e-05,
+    "gst_rate": 0.18,
+    "slippage_per_side": 0.0005
+  }
+}
