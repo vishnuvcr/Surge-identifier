@@ -14,7 +14,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from backtest.run_backtest_phase61 import execute, liquidity_table, load_events, summary
-from src.moe_engine import add_forward_targets, add_point_in_time_events
+from src.moe_engine import add_point_in_time_events
+from src.moe_engine_phase63 import add_targets
 from src.moe_engine_phase64 import (
     add_cpr_features,
     score_experts,
@@ -56,7 +57,7 @@ def main() -> None:
     feat = add_cpr_features(feat)
     news, corp = load_events(cfg)
     feat = add_point_in_time_events(feat, news, corp)
-    feat = add_forward_targets(feat)
+    feat = add_targets(feat, float(cfg['stop_loss_pct']), tuple(cfg['target_levels']))
     feat.date = pd.to_datetime(feat.date).dt.normalize()
     log(f'Features/targets ready: {len(feat):,} rows; news={len(news):,}; corp={len(corp):,}', started)
 
@@ -73,7 +74,7 @@ def main() -> None:
     eligible_set = liquidity_table(prices, int(cfg['liquidity_lookback_sessions']), float(cfg['min_avg_turnover_cr']))
     eligible_by_day = {}
     for day, sym in eligible_set:
-        eligible_by_day.setdefault(day, set()).add(sym)
+        eligible_by_day.setdefault(pd.Timestamp(day), set()).add(sym)
     log(f'Universe ready: {len(eval_days)} OOS sessions; {len(eligible_set):,} eligible day-symbol pairs', started)
 
     sizes = [int(x) for x in cfg['portfolio_sizes']]
@@ -106,10 +107,7 @@ def main() -> None:
             prior = prior[prior.date.isin(train_days)].copy()
             if len(train_days) >= int(cfg['min_train_days']):
                 bundles = train_experts(prior, tuple(cfg['target_levels']), float(cfg['stop_loss_pct']), int(cfg['seed']), int(cfg['min_positive_labels']))
-                if bundles:
-                    router = train_regime_router(prior, bundles, int(cfg['seed']))
-                else:
-                    router = {}
+                router = train_regime_router(prior, bundles, int(cfg['seed'])) if bundles else {}
             else:
                 bundles, router = {}, {}
             diagnostics['expert_refits'].append({'period': str(period), 'train_days': len(train_days), 'experts': sorted(bundles), 'router_regimes': sorted(router)})
@@ -117,10 +115,7 @@ def main() -> None:
             last_period = period
 
         entry_day = next_day.get(signal_day)
-        symbols = eligible_by_day.get(signal_day.date() if hasattr(signal_day, 'date') else signal_day, set())
-        if not symbols:
-            # liquidity_table dates are pandas timestamps in current implementation
-            symbols = eligible_by_day.get(signal_day, set())
+        symbols = eligible_by_day.get(signal_day, set())
         universe = feat[(feat.date == signal_day) & feat.symbol.isin(symbols)].copy()
         diagnostics['universe_rows'] += len(universe)
 
@@ -149,8 +144,6 @@ def main() -> None:
                 pnl = 0.0
                 for _, pick in chosen.iterrows():
                     row = prices_idx.loc[(entry_day, pick.symbol)]
-                    # Risk controls determine target/stop execution, not whether the top-ranked
-                    # prediction is eligible. Every selected expert candidate is tradable.
                     result = execute(row, allocation, cfg['costs'], float(pick.target), float(cfg['stop_loss_pct']))
                     result.update(pick.to_dict())
                     result.update({'signal_date': signal_day, 'entry_date': entry_day, 'portfolio_size': ps})
@@ -158,7 +151,7 @@ def main() -> None:
                     pnl += result['net_pnl']
                 st['capital'] += pnl
                 st['daily'].append({'signal_date': signal_day, 'entry_date': entry_day, 'executed': 1, 'starting_equity': start_equity, 'ending_equity': st['capital'], 'daily_pnl': pnl, 'daily_return_pct': pnl / max(start_equity, 1.0), 'selected_count': len(chosen)})
-            log(f"TRADE DAY {i}/{len(eval_days)}: signal={signal_day.date()} entry={entry_day.date()} selected={len(selected)} best={selected.iloc[0].symbol if not selected.empty else 'NA'}", started)
+            log(f"TRADE DAY {i}/{len(eval_days)}: signal={signal_day.date()} entry={entry_day.date()} selected={len(selected)} best={selected.iloc[0].symbol}", started)
 
         if i == 1 or i % 20 == 0 or i == len(eval_days):
             snapshot = ', '.join(f"P{ps}=Rs.{states[ps]['capital']:,.0f}" for ps in sizes)
