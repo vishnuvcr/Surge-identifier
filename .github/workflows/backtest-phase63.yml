@@ -1,0 +1,123 @@
+name: Surge Strategy Backtest Phase 6.3
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [phase6.3-adaptive-cpr-moe]
+    paths:
+      - 'src/moe_engine_phase63.py'
+      - 'backtest/run_backtest_phase63.py'
+      - 'backtest/config_phase63.yaml'
+      - 'scripts/refresh_master_dataset.py'
+      - 'src/nse_data.py'
+      - 'src/nse_fo.py'
+      - 'requirements.txt'
+      - '.github/workflows/backtest-phase63.yml'
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: surge-phase63
+  cancel-in-progress: false
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Verify repository import path
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          test -d src
+          test -f src/nse_data.py
+          test -f src/nse_fo.py
+          test -f src/moe_engine_phase63.py
+          python -c "import src; import src.moe_engine_phase63; print('repository imports OK')"
+
+      - name: Restore persistent NSE master dataset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/master-restore data/cache
+          if gh release view phase62-data --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'Restoring persistent master dataset.'
+            gh release download phase62-data --repo "$GITHUB_REPOSITORY" --pattern 'phase62-master-data.tar.zst' --dir /tmp/master-restore --clobber
+            tar -C data -I 'zstd -T0' -xf /tmp/master-restore/phase62-master-data.tar.zst
+          else
+            echo 'No persistent snapshot exists; bootstrapping from NSE once.'
+          fi
+
+      - name: Bootstrap or refresh persistent dataset
+        if: ${{ !hashFiles('data/cache/prices.parquet') || !hashFiles('data/cache/fo.parquet') }}
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          python scripts/refresh_master_dataset.py --lookback-days 1500
+
+      - name: Validate master dataset
+        run: |
+          test -s data/cache/prices.parquet
+          test -s data/cache/fo.parquet
+          python - <<'PY'
+          import pandas as pd
+          p=pd.read_parquet('data/cache/prices.parquet',columns=['date','symbol'])
+          f=pd.read_parquet('data/cache/fo.parquet',columns=['date','symbol'])
+          assert len(p)>1000 and len(f)>1000
+          assert not p.duplicated(['date','symbol']).any()
+          print(f'prices={len(p):,} rows {p.date.min()}..{p.date.max()}')
+          print(f'fno={len(f):,} rows {f.date.min()}..{f.date.max()}')
+          PY
+
+      - name: Run Phase 6.3 walk-forward backtest
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          rm -rf backtest/results/phase63
+          python backtest/run_backtest_phase63.py
+
+      - name: Validate results
+        run: |
+          test -s backtest/results/phase63/summary.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('backtest/results/phase63/summary.json').read_text())
+          assert r.get('phase')=='6.3'
+          assert r.get('diagnostics',{}).get('signal_days',0)>0
+          print(json.dumps({
+            'phase':r['phase'],
+            'runtime_seconds':r['runtime_seconds'],
+            'diagnostics':r['diagnostics'],
+            'summaries':r['summaries']
+          },indent=2))
+          PY
+
+      - name: Upload Phase 6.3 results
+        uses: actions/upload-artifact@v4
+        with:
+          name: surge-phase63-results
+          path: backtest/results/phase63/
+          if-no-files-found: error
+
+      - name: Publish results commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add backtest/results/phase63
+          git diff --cached --quiet || git commit -m 'Add Phase 6.3 backtest results'
+          git push origin HEAD:phase6.3-adaptive-cpr-moe
