@@ -1,0 +1,1 @@
+Phase 6.2 branch is exploratory and isolated from Phase 6.1. Runtime reductions must come from horizontal parallelism, immutable shared caches, and process-level parallel fitting—not from removing data, experts, features, targets, leakage checks, or execution realism.
