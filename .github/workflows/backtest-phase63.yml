@@ -5,6 +5,7 @@ on:
   push:
     branches: [phase6.3-adaptive-cpr-moe]
     paths:
+      - 'src/surge_model.py'
       - 'src/moe_engine_phase63.py'
       - 'backtest/run_backtest_phase63.py'
       - 'backtest/config_phase63.yaml'
@@ -44,8 +45,9 @@ jobs:
           test -d src
           test -f src/nse_data.py
           test -f src/nse_fo.py
+          test -f src/surge_model.py
           test -f src/moe_engine_phase63.py
-          python -c "import src; import src.moe_engine_phase63; print('repository imports OK')"
+          python -c "import src; import src.surge_model; import src.moe_engine_phase63; print('repository imports OK')"
 
       - name: Restore persistent NSE master dataset
         env:
@@ -81,12 +83,33 @@ jobs:
           print(f'fno={len(f):,} rows {f.date.min()}..{f.date.max()}')
           PY
 
-      - name: Run Phase 6.3 walk-forward backtest
+      - name: Validate F&O numeric feature inputs
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
+          python - <<'PY'
+          import pandas as pd
+          f = pd.read_parquet('data/cache/fo.parquet')
+          print('F&O dtypes before feature build:')
+          for c in ['fut_oi','fut_oi_change','fut_volume','pcr']:
+              if c in f.columns:
+                  print(f'  {c}: {f[c].dtype}')
+                  coerced = pd.to_numeric(f[c], errors='coerce').astype('float64')
+                  assert str(coerced.dtype) == 'float64'
+          print('F&O numeric preflight PASSED')
+          PY
+
+      - name: Run Phase 6.3 walk-forward backtest
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          PYTHONUNBUFFERED: '1'
+        run: |
           rm -rf backtest/results/phase63
-          python backtest/run_backtest_phase63.py
+          echo '============================================='
+          echo 'PHASE 6.3 BACKTEST LAUNCHING'
+          echo 'Progress messages below are live/unbuffered.'
+          echo '============================================='
+          python -u backtest/run_backtest_phase63.py
 
       - name: Validate results
         run: |
