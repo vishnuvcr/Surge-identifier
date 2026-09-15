@@ -1,0 +1,70 @@
+name: Surge Strategy Backtest Phase 6.1
+
+on:
+  push:
+    branches: [phase6.1-full-information-moe]
+    paths:
+      - 'src/moe_engine_phase61.py'
+      - 'backtest/run_backtest_phase61.py'
+      - 'backtest/config_phase61.yaml'
+      - '.github/workflows/backtest-phase61.yml'
+      - 'src/moe_engine.py'
+      - 'src/surge_model.py'
+      - 'src/nse_data.py'
+      - 'src/nse_fo.py'
+      - 'data/events/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: phase61-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: phase6.1-full-information-moe
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: phase61-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            phase61-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Phase 6.1 backtest
+        run: python backtest/run_backtest_phase61.py
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: surge-phase61-results
+          path: backtest/results/phase61
+          if-no-files-found: error
+
+      - name: Commit Phase 6.1 results
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add backtest/results/phase61
+          git diff --cached --quiet && exit 0
+          git commit -m 'Update Phase 6.1 backtest results'
+          git push origin HEAD:phase6.1-full-information-moe
