@@ -1,0 +1,36 @@
+{
+  "asof_date": "2026-09-11",
+  "generated_at_ist": "2026-09-15T10:46:09.703323+05:30",
+  "event_definition": "Next session intraday high >= +3% from next session open",
+  "universe": "NSE CM EQ series with sufficient median turnover",
+  "data_layers": [
+    "NSE CM bhavcopy",
+    "NSE F&O bhavcopy / positioning context"
+  ],
+  "candidates": [
+    {
+      "symbol": "AWFIS",
+      "last_close": 293.2,
+      "surge_probability": 0.8562339544296265,
+      "expected_move_proxy": 0.07752874683297598,
+      "atr_pct": 0.04307152601831998,
+      "relative_volume": 16.437598513051217,
+      "turnover_cr": 702.08361396,
+      "risk_flag": "normal",
+      "gap": -0.004407051282051211,
+      "pcr_deviation": 0.0,
+      "futures_oi_change_z": 0.0,
+      "futures_volume_rel20": 1.0
+    }
+  ],
+  "model": {
+    "type": "PyTorch MLP with LayerNorm/GELU/Dropout",
+    "features": 32,
+    "threshold": 0.8500000000000001,
+    "validation_precision": 0.6363636363636364,
+    "validation_recall_sensitivity": 0.0015466195315952276,
+    "validation_specificity": 0.9998464786029553,
+    "validation_window_days": 60
+  },
+  "research_status": "signal-ranking research only; no guarantee of daily/monthly profitability"
+}
