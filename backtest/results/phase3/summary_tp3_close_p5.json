@@ -1,0 +1,47 @@
+{
+  "portfolio_size": 5,
+  "mode": "tp3_close",
+  "initial_capital": 100000.0,
+  "final_equity": 54664.63298848687,
+  "net_pnl": -45335.36701151317,
+  "net_return_pct": -0.4533536701151313,
+  "gross_pnl": -18917.949588572345,
+  "fees": 26417.417422940827,
+  "trade_count": 510,
+  "qualified_trade_count": 21,
+  "expected_return_rank_trade_count": 489,
+  "rank_layer_trade_fraction": 0.9588235294117647,
+  "win_rate": 0.3333333333333333,
+  "profit_factor": 0.49537517499569667,
+  "max_drawdown_pct": -0.4509254348264805,
+  "profitable_days": 27,
+  "losing_days": 75,
+  "trading_days_with_execution": 102,
+  "average_trades_per_day": 5.0,
+  "portfolio_fullness_ratio": 1.0,
+  "days_using_expected_return_layer": 102,
+  "return_rank_validation": {
+    "median_rank_ic": 0.27418145380147374,
+    "median_mae": 0.01566629484295845
+  },
+  "anti_lookahead": [
+    "Both models are fit only on rows whose realized next-session label date is strictly before the prediction day.",
+    "Training history is limited to the configured trailing sessions.",
+    "Surge threshold is selected only inside the historical validation segment preceding the prediction month.",
+    "Expected-return validation metrics are calculated only on the historical validation segment.",
+    "Liquidity is computed only from observations strictly before the signal date.",
+    "Correlation diversification uses only trailing returns strictly before the signal date.",
+    "Signal is generated at EOD; entry is the next trading-session open.",
+    "Next-day OHLC is used only after portfolio selection, solely for trade outcome calculation.",
+    "The expected-return layer fills missing slots without lowering the surge classifier threshold."
+  ],
+  "costs": {
+    "brokerage_per_order": 20.0,
+    "exchange_turnover_rate": 3.45e-05,
+    "stt_sell_rate": 0.00025,
+    "sebi_turnover_rate": 1e-06,
+    "stamp_buy_rate": 3e-05,
+    "gst_rate": 0.18,
+    "slippage_per_side": 0.0005
+  }
+}
