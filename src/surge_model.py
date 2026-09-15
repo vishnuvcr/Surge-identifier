@@ -27,16 +27,20 @@ def _safe_div(a, b):
 
 def build_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.sort_values(["symbol", "date"]).copy()
-    # F&O columns can arrive from parquet/merge as object dtype when missing
-    # values or mixed representations are present. Coerce them before any
-    # rolling numeric aggregation; otherwise pandas raises "No numeric types
-    # to aggregate" on the PCR/OI rolling windows.
+    # F&O columns can arrive from parquet/merge as object or pandas nullable
+    # extension dtypes. Force them all the way to NumPy float64 before rolling
+    # operations; merely calling to_numeric/fillna can leave a nullable dtype
+    # containing pd.NA, which pandas rolling cannot aggregate reliably.
     fno_defaults = {"fut_oi": 0.0, "fut_oi_change": 0.0, "fut_volume": 0.0, "pcr": 1.0}
     for col, default in fno_defaults.items():
         if col not in df.columns:
             df[col] = default
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-        df[col] = df[col].fillna(default)
+        numeric = pd.to_numeric(df[col], errors="coerce")
+        df[col] = numeric.fillna(default).astype(np.float64)
+    # Validate the F&O boundary before constructing any rolling features.
+    for col in fno_defaults:
+        if not np.issubdtype(df[col].dtype, np.floating):
+            raise TypeError(f"F&O feature {col} is not numeric: {df[col].dtype}")
     g = df.groupby("symbol", group_keys=False)
     close = df["close"].astype(float)
     opn = df["open"].astype(float)
