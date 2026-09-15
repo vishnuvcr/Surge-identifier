@@ -65,7 +65,14 @@ jobs:
           fi
 
       - name: Refresh master dataset incrementally
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
+          echo "Workspace: $GITHUB_WORKSPACE"
+          test -d src
+          test -f src/nse_data.py
+          test -f src/nse_fo.py
+          python -c "import src; print('src import OK:', src.__file__)"
           python scripts/refresh_master_dataset.py \
             --lookback-days "${{ inputs.lookback_days || '1500' }}" \
             ${{ inputs.force_rebuild && '--force-rebuild' || '' }}
