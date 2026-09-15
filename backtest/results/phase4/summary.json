@@ -1,0 +1,57 @@
+{
+  "initial_capital": 100000,
+  "final_equity": 94668.43422366165,
+  "net_pnl": -5331.565776338367,
+  "net_return_pct": -0.05331565776338354,
+  "trade_count": 8,
+  "win_rate": 0.375,
+  "profit_factor": 0.5987067242382415,
+  "max_drawdown_pct": -0.0807832967848725,
+  "profitable_execution_days": 3,
+  "losing_execution_days": 5,
+  "no_trade_days": 95,
+  "target_distribution": {
+    "0.03": 8
+  },
+  "mean_target_pct": 0.03,
+  "daily_target_hit_rate": {
+    "0.03": 0.375
+  },
+  "monthly_results": [
+    {
+      "month": "2026-08",
+      "starting_equity": 100000.0,
+      "net_pnl": -2754.218734135886,
+      "return_pct": -0.027542187341358826
+    },
+    {
+      "month": "2026-09",
+      "starting_equity": 97245.78126586412,
+      "net_pnl": -2577.347042202481,
+      "return_pct": -0.026503432937169502
+    }
+  ],
+  "objective": {
+    "daily_target_min_pct": 0.03,
+    "daily_target_max_pct": 0.05,
+    "monthly_target_pct": 0.3
+  },
+  "warning": "The requested 3-5% daily and 30% monthly targets are research objectives, not guaranteed outcomes; the backtest must prove them out-of-sample.",
+  "anti_lookahead": [
+    "Model labels are required to have their next-session label date strictly before the prediction day.",
+    "Training uses only the trailing configured history.",
+    "Liquidity is computed only from data strictly before the signal day.",
+    "Signal is generated at EOD and executed on the next session open.",
+    "Next-session OHLC is never used in model fitting or signal selection.",
+    "Monthly model refits use only information available before that month."
+  ],
+  "costs": {
+    "brokerage_per_order": 20.0,
+    "exchange_turnover_rate": 3.45e-05,
+    "stt_sell_rate": 0.00025,
+    "sebi_turnover_rate": 1e-06,
+    "stamp_buy_rate": 3e-05,
+    "gst_rate": 0.18,
+    "slippage_per_side": 0.0005
+  }
+}
