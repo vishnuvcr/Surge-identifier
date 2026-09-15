@@ -16,7 +16,8 @@ FEATURES = [
     "vol_z20", "turnover_z20", "relvol5", "relvol20", "dist_high20",
     "dist_high60", "dist_low20", "trend20", "trend60", "volatility20",
     "skew20", "market_ret1", "market_ret5", "market_breadth",
-    "cross_ret_rank", "cross_vol_rank",
+    "cross_ret_rank", "cross_vol_rank", "fut_oi_z20", "fut_oi_change_z20",
+    "fut_volume_rel20", "pcr_dev20",
 ]
 
 
@@ -26,6 +27,9 @@ def _safe_div(a, b):
 
 def build_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.sort_values(["symbol", "date"]).copy()
+    for col, default in [("fut_oi", 0.0), ("fut_oi_change", 0.0), ("fut_volume", 0.0), ("pcr", 1.0)]:
+        if col not in df.columns:
+            df[col] = default
     g = df.groupby("symbol", group_keys=False)
     close = df["close"].astype(float)
     opn = df["open"].astype(float)
@@ -76,6 +80,15 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     df["volatility20"] = g["ret1"].transform(lambda s: s.rolling(20, min_periods=10).std())
     df["skew20"] = g["ret1"].transform(lambda s: s.rolling(20, min_periods=15).skew())
 
+    for col, out in [("fut_oi", "fut_oi_z20"), ("fut_oi_change", "fut_oi_change_z20")]:
+        mean = g[col].transform(lambda s: s.rolling(20, min_periods=5).mean())
+        std = g[col].transform(lambda s: s.rolling(20, min_periods=5).std())
+        df[out] = _safe_div(df[col] - mean, std)
+    fvol_mean = g["fut_volume"].transform(lambda s: s.rolling(20, min_periods=5).mean())
+    df["fut_volume_rel20"] = _safe_div(df["fut_volume"], fvol_mean)
+    pcr_mean = g["pcr"].transform(lambda s: s.rolling(20, min_periods=5).mean())
+    df["pcr_dev20"] = df["pcr"] - pcr_mean
+
     daily = df.groupby("date").agg(
         market_ret1=("ret1", "mean"),
         market_ret5=("ret5", "mean"),
@@ -97,9 +110,9 @@ class SurgeNet(nn.Module):
     def __init__(self, n_features: int):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(n_features, 96), nn.LayerNorm(96), nn.GELU(), nn.Dropout(0.20),
-            nn.Linear(96, 48), nn.GELU(), nn.Dropout(0.15),
-            nn.Linear(48, 16), nn.GELU(), nn.Linear(16, 1),
+            nn.Linear(n_features, 112), nn.LayerNorm(112), nn.GELU(), nn.Dropout(0.20),
+            nn.Linear(112, 56), nn.GELU(), nn.Dropout(0.15),
+            nn.Linear(56, 20), nn.GELU(), nn.Linear(20, 1),
         )
 
     def forward(self, x):
