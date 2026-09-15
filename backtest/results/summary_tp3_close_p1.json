@@ -1,0 +1,42 @@
+{
+  "portfolio_size": 1,
+  "mode": "tp3_close",
+  "initial_capital": 100000.0,
+  "final_equity": 75376.90964488008,
+  "net_pnl": -24623.09035511993,
+  "net_return_pct": -0.24623090355119914,
+  "gross_pnl": -16301.722628228046,
+  "fees": 8321.367726891887,
+  "trade_count": 102,
+  "qualified_trade_count": 15,
+  "fallback_trade_count": 87,
+  "fallback_trade_fraction": 0.8529411764705882,
+  "win_rate": 0.5294117647058824,
+  "profit_factor": 0.8467948772286839,
+  "max_drawdown_pct": -0.4408759532622203,
+  "profitable_days": 54,
+  "losing_days": 48,
+  "trading_days_with_execution": 102,
+  "average_trades_per_day": 1.0,
+  "portfolio_fullness_ratio": 1.0,
+  "daily_fallback_days": 87,
+  "anti_lookahead": [
+    "Model fitting uses only feature rows whose realized next-session label date is strictly before the prediction day.",
+    "Training history is limited to the configured trailing sessions.",
+    "Threshold is selected only inside the historical validation segment preceding the prediction month.",
+    "Liquidity is computed only from observations strictly before the signal date.",
+    "Correlation diversification uses only trailing returns strictly before the signal date.",
+    "Signal is generated at EOD; entry is the next trading-session open.",
+    "Next-day OHLC is used only after the portfolio has been selected, solely for trade outcome calculation.",
+    "A forced fallback is exactly one trade when no qualified signal exists; it is never expanded to five low-confidence trades."
+  ],
+  "costs": {
+    "brokerage_per_order": 20.0,
+    "exchange_turnover_rate": 3.45e-05,
+    "stt_sell_rate": 0.00025,
+    "sebi_turnover_rate": 1e-06,
+    "stamp_buy_rate": 3e-05,
+    "gst_rate": 0.18,
+    "slippage_per_side": 0.0005
+  }
+}
