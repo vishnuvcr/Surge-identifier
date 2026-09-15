@@ -74,24 +74,33 @@ jobs:
           print(f'cache OK: cash_dates={len(cash_dates)} fo_dates={len(fo_dates)} min={min_date.date()} max={max_date.date()}', flush=True)
 
           # Discover blocks from the ACTUAL available data rather than assuming fixed years.
-          # This avoids silently creating shards for dates that do not exist in the cache.
-          blocks=[]
+          blocks = []
           cursor = pd.Timestamp(min_date.year, min_date.month, 1)
           end_limit = max_date + pd.Timedelta(days=1)
           while cursor < end_limit:
               nxt = cursor + pd.DateOffset(months=6)
               block_end = min(nxt, end_limit)
-              blocks.append({'start': cursor.strftime('%Y-%m-%d'), 'end': block_end.strftime('%Y-%m-%d')})
+              blocks.append({
+                  'start': cursor.strftime('%Y-%m-%d'),
+                  'end': block_end.strftime('%Y-%m-%d'),
+              })
               cursor = nxt
+
           assert blocks, 'No chronological backtest blocks discovered'
-          print('blocks:', blocks, flush=True)
-          print('blocks=' + json.dumps(json.dumps(blocks, separators=(',', ':'))))
+          assert all(blocks[i]['start'] < blocks[i]['end'] for i in range(len(blocks)))
+          assert all(blocks[i]['end'] == blocks[i + 1]['start'] for i in range(len(blocks) - 1))
+          print('discovered blocks:', json.dumps(blocks, separators=(',', ':')), flush=True)
+
+          # GitHub Actions output must contain exactly `name=value` lines.
+          # Emit the JSON array directly so fromJSON(needs.prepare-data.outputs.blocks)
+          # receives an array of objects rather than a doubly-encoded string.
+          print('blocks=' + json.dumps(blocks, separators=(',', ':')))
           PY
       - name: Cache prepared data for all shards
         uses: actions/cache@v4
         with:
           path: data/cache
-          key: phase62-data-v3-${{ runner.os }}-${{ hashFiles('backtest/config_phase62.yaml', 'src/nse_data.py', 'src/nse_fo.py') }}
+          key: phase62-data-v4-${{ runner.os }}-${{ hashFiles('backtest/config_phase62.yaml', 'src/nse_data.py', 'src/nse_fo.py') }}
 
   backtest:
     needs: prepare-data
@@ -114,7 +123,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: data/cache
-          key: phase62-data-v3-${{ runner.os }}-${{ hashFiles('backtest/config_phase62.yaml', 'src/nse_data.py', 'src/nse_fo.py') }}
+          key: phase62-data-v4-${{ runner.os }}-${{ hashFiles('backtest/config_phase62.yaml', 'src/nse_data.py', 'src/nse_fo.py') }}
           fail-on-cache-miss: true
       - name: Validate restored cache and shard configuration
         env:
