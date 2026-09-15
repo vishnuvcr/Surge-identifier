@@ -45,34 +45,6 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Publish master-data refresh status
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p reports
-          python - <<'PY'
-          import json, os
-          from datetime import datetime, timezone
-          from pathlib import Path
-          p = Path('reports/phase62_status.json')
-          payload = {
-              'workflow': 'Prepare Persistent NSE Master Data',
-              'phase': 'master_data_refresh',
-              'status': 'running',
-              'run_id': int(os.environ['GITHUB_RUN_ID']),
-              'run_attempt': int(os.environ['GITHUB_RUN_ATTEMPT']),
-              'commit': os.environ['GITHUB_SHA'],
-              'branch': os.environ['GITHUB_REF_NAME'],
-              'updated_at_utc': datetime.now(timezone.utc).isoformat(),
-          }
-          p.write_text(json.dumps(payload, indent=2) + '\n')
-          PY
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add reports/phase62_status.json
-          git diff --cached --quiet || git commit -m 'Phase 6.2: publish master-data status'
-          git push
-
       - name: Restore existing persistent snapshot when available
         env:
           GH_TOKEN: ${{ github.token }}
@@ -138,25 +110,33 @@ jobs:
           fi
           echo 'Persistent master dataset published.'
 
-      - name: Publish master-data completion status
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Write master-data status artifact
         run: |
+          mkdir -p status
           python - <<'PY'
           import json, os
           from datetime import datetime, timezone
           from pathlib import Path
-          p = Path('reports/phase62_status.json')
-          payload = json.loads(p.read_text())
-          payload.update({
+          payload = {
+              'workflow': 'Prepare Persistent NSE Master Data',
+              'phase': 'master_data_refresh',
               'status': 'master_data_ready',
+              'run_id': int(os.environ['GITHUB_RUN_ID']),
+              'run_attempt': int(os.environ['GITHUB_RUN_ATTEMPT']),
+              'commit': os.environ['GITHUB_SHA'],
+              'branch': os.environ['GITHUB_REF_NAME'],
               'updated_at_utc': datetime.now(timezone.utc).isoformat(),
-          })
-          p.write_text(json.dumps(payload, indent=2) + '\n')
+          }
+          Path('status/phase62_master_data_status.json').write_text(json.dumps(payload, indent=2) + '\n')
+          print(json.dumps(payload, indent=2))
           PY
-          git add reports/phase62_status.json
-          git commit -m 'Phase 6.2: master data ready'
-          git push
+
+      - name: Upload master-data status artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase62-master-data-status
+          path: status/phase62_master_data_status.json
+          if-no-files-found: error
 
       - name: Dispatch Phase 6.2 backtest after master dataset is ready
         env:
