@@ -1,34 +1,36 @@
 {
   "initial_capital": 100000,
-  "final_equity": 94668.43422366165,
-  "net_pnl": -5331.565776338367,
-  "net_return_pct": -0.05331565776338354,
-  "trade_count": 8,
-  "win_rate": 0.375,
-  "profit_factor": 0.5987067242382415,
+  "final_equity": 92934.90769394135,
+  "net_pnl": -7065.092306058649,
+  "net_return_pct": -0.07065092306058651,
+  "trade_count": 7,
+  "win_rate": 0.2857142857142857,
+  "profit_factor": 0.4700507344014765,
   "max_drawdown_pct": -0.0807832967848725,
-  "profitable_execution_days": 3,
+  "profitable_execution_days": 2,
   "losing_execution_days": 5,
-  "no_trade_days": 95,
+  "no_trade_days": 96,
   "target_distribution": {
-    "0.03": 8
+    "0.03": 3,
+    "0.04": 4
   },
-  "mean_target_pct": 0.03,
+  "mean_target_pct": 0.03571428571428571,
   "daily_target_hit_rate": {
-    "0.03": 0.375
+    "0.03": 0.14285714285714285,
+    "0.04": 0.14285714285714285
   },
   "monthly_results": [
     {
       "month": "2026-08",
       "starting_equity": 100000.0,
-      "net_pnl": -2754.218734135886,
-      "return_pct": -0.027542187341358826
+      "net_pnl": -1811.7829679707056,
+      "return_pct": -0.018117829679707098
     },
     {
       "month": "2026-09",
-      "starting_equity": 97245.78126586412,
-      "net_pnl": -2577.347042202481,
-      "return_pct": -0.026503432937169502
+      "starting_equity": 98188.2170320293,
+      "net_pnl": -5253.309338087943,
+      "return_pct": -0.05350244150348815
     }
   ],
   "objective": {
