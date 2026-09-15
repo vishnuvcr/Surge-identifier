@@ -1,0 +1,21 @@
+name: Launch Phase 6.4 Backtest
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  launch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch Phase 6.4 backtest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run backtest-phase64.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref phase6.4-parallel-regime-moe
+          echo 'Phase 6.4 backtest workflow dispatched.'
