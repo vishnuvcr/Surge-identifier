@@ -1,0 +1,63 @@
+name: Bootstrap Phase 6.2 Master Data
+
+on:
+  push:
+    branches: [phase6.2-persistent-master-data]
+    paths:
+      - '.bootstrap-master-data-trigger'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: surge-master-data-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Bootstrap master dataset from NSE
+        run: python scripts/refresh_master_dataset.py --lookback-days 1500 --force-rebuild
+      - name: Validate and package snapshot
+        run: |
+          test -s data/cache/prices.parquet
+          test -s data/cache/fo.parquet
+          test -s data/cache/manifest.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import pandas as pd
+          m = json.loads(Path('data/cache/manifest.json').read_text())
+          p = pd.read_parquet('data/cache/prices.parquet', columns=['date','symbol'])
+          f = pd.read_parquet('data/cache/fo.parquet', columns=['date','symbol'])
+          assert len(p) > 1000 and len(f) > 1000
+          assert m['cash']['rows'] == len(p)
+          assert m['fno']['rows'] == len(f)
+          print(json.dumps(m, indent=2))
+          PY
+          rm -rf data/cache/raw data/cache/fo_raw
+          tar -C data -I 'zstd -T0 -10' -cf /tmp/phase62-master-data.tar.zst \
+            cache/prices.parquet cache/fo.parquet cache/manifest.json
+      - name: Publish snapshot release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view phase62-data --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload phase62-data /tmp/phase62-master-data.tar.zst \
+              --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create phase62-data /tmp/phase62-master-data.tar.zst \
+              --repo "$GITHUB_REPOSITORY" \
+              --title 'Phase 6.2 persistent master NSE dataset' \
+              --notes 'Persistent NSE cash + F&O Parquet snapshot used by Phase 6.2 backtests.'
+          fi
