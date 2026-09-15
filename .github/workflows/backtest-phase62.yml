@@ -3,7 +3,7 @@ name: Surge Strategy Backtest Phase 6.2
 on:
   workflow_dispatch:
   push:
-    branches: [phase6.2-parallel-long-history]
+    branches: [phase6.2-persistent-master-data]
     paths:
       - 'src/**'
       - 'backtest/**'
@@ -24,18 +24,14 @@ jobs:
       data_cache_key: ${{ steps.discover.outputs.data_cache_key }}
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
-
       - name: Install dependencies
         run: pip install -r requirements.txt
-
       - name: Validate code and config before data work
         run: python backtest/phase62_preflight.py --config-only
-
       - name: Restore persistent master dataset release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -46,19 +42,13 @@ jobs:
             echo 'Run .github/workflows/prepare-master-data.yml once to bootstrap the NSE master dataset.'
             exit 1
           fi
-          gh release download phase62-data \
-            --repo "$GITHUB_REPOSITORY" \
-            --pattern 'phase62-master-data.tar.zst' \
-            --dir /tmp/master-release \
-            --clobber
+          gh release download phase62-data --repo "$GITHUB_REPOSITORY" --pattern 'phase62-master-data.tar.zst' --dir /tmp/master-release --clobber
           tar -C data -I 'zstd -T0' -xf /tmp/master-release/phase62-master-data.tar.zst
-
       - name: Validate persistent master dataset and discover shards
         id: discover
         run: |
-          python - <<'PY' >> "$GITHUB_OUTPUT"
-          import hashlib
-          import json
+          python - <<'PY'
+          import hashlib, json
           from pathlib import Path
           import pandas as pd
           import yaml
@@ -77,13 +67,11 @@ jobs:
           fo['date'] = pd.to_datetime(fo['date']).dt.normalize()
           cash_dates = sorted(px.date.unique())
           fo_dates = sorted(fo.date.unique())
-
           manifest = json.loads(m.read_text())
           assert int(manifest['cash']['rows']) == len(pd.read_parquet(p, columns=['date'])), 'Cash manifest row count mismatch'
           assert int(manifest['fno']['rows']) == len(pd.read_parquet(f, columns=['date'])), 'F&O manifest row count mismatch'
           assert manifest['cash']['min_date'] == cash_dates[0].strftime('%Y-%m-%d')
           assert manifest['cash']['max_date'] == cash_dates[-1].strftime('%Y-%m-%d')
-
           min_train = int(cfg['min_train_days'])
           assert len(cash_dates) >= min_train + 5, f'Insufficient cash history: {len(cash_dates)} dates'
           assert len(fo_dates) >= min(120, len(cash_dates)), f'Insufficient F&O history: {len(fo_dates)} dates'
@@ -98,31 +86,23 @@ jobs:
           while cursor < end_limit:
               nxt = cursor + pd.DateOffset(months=6)
               block_end = min(nxt, end_limit)
-              blocks.append({
-                  'start': cursor.strftime('%Y-%m-%d'),
-                  'end': block_end.strftime('%Y-%m-%d'),
-              })
+              blocks.append({'start': cursor.strftime('%Y-%m-%d'), 'end': block_end.strftime('%Y-%m-%d')})
               cursor = nxt
 
           assert blocks, 'No chronological backtest blocks discovered'
-          assert all(b['start'] < b['end'] for b in blocks), f'Invalid block boundaries: {blocks}'
-          assert all(blocks[i]['end'] == blocks[i + 1]['start'] for i in range(len(blocks) - 1)), f'Non-contiguous blocks: {blocks}'
+          assert all(b['start'] < b['end'] for b in blocks)
+          assert all(blocks[i]['end'] == blocks[i + 1]['start'] for i in range(len(blocks) - 1))
           assert blocks[0]['start'] <= min_date.strftime('%Y-%m-%d') < blocks[-1]['end']
           assert blocks[-1]['end'] > max_date.strftime('%Y-%m-%d')
 
-          # GitHub Actions requires an object-valued matrix to use include:
-          # [{start: ..., end: ...}, ...]. A block dimension containing objects
-          # is rejected by the matrix expander.
-          matrix = {'include': blocks}
-          matrix_json = json.dumps(matrix, separators=(',', ':'))
-          print('discovered matrix:', matrix_json, flush=True)
-
+          matrix_json = json.dumps({'include': blocks}, separators=(',', ':'))
           data_hash = hashlib.sha256(m.read_bytes()).hexdigest()[:16]
           cache_key = f'phase62-master-v1-{data_hash}'
-          print('matrix=' + matrix_json)
-          print('data_cache_key=' + cache_key)
+          print('discovered matrix:', matrix_json, flush=True)
+          with open('${GITHUB_OUTPUT}', 'a') as out:
+              out.write('matrix=' + matrix_json + '\n')
+              out.write('data_cache_key=' + cache_key + '\n')
           PY
-
       - name: Cache persistent dataset for all shards
         uses: actions/cache/save@v4
         with:
@@ -139,22 +119,18 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare-data.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
-
       - name: Install dependencies
         run: pip install -r requirements.txt
-
       - name: Restore persistent prepared data
         uses: actions/cache/restore@v4
         with:
           path: data/cache
           key: ${{ needs.prepare-data.outputs.data_cache_key }}
           fail-on-cache-miss: true
-
       - name: Validate restored cache and shard configuration
         env:
           PHASE62_BLOCK_START: ${{ matrix.start }}
@@ -176,14 +152,12 @@ jobs:
           assert manifest['cash']['max_date'] == dates.max().strftime('%Y-%m-%d')
           print(f'Shard cache/config OK: available={dates.min().date()}..{dates.max().date()} block={start.date()}..{end.date()}')
           PY
-
       - name: Run Phase 6.2 shard
         env:
           PHASE62_BLOCK_START: ${{ matrix.start }}
           PHASE62_BLOCK_END: ${{ matrix.end }}
           PHASE62_OUTPUT_DIR: backtest/results/phase62/${{ matrix.start }}_${{ matrix.end }}
         run: python backtest/run_backtest_phase62.py
-
       - name: Validate shard outputs
         env:
           PHASE62_OUTPUT_DIR: backtest/results/phase62/${{ matrix.start }}_${{ matrix.end }}
@@ -199,7 +173,6 @@ jobs:
           assert not missing, f'Missing result fields: {missing}'
           print('Shard output schema OK')
           PY
-
       - name: Upload shard results
         uses: actions/upload-artifact@v4
         with:
