@@ -2,6 +2,8 @@ name: Surge Strategy Backtest
 
 on:
   workflow_dispatch:
+  push:
+    branches: [backtest-paytm-intraday]
 
 permissions:
   contents: write
