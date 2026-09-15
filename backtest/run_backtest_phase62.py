@@ -1,51 +1,65 @@
-"""Phase 6.2 launcher.
+"""Phase 6.2 block launcher.
 
-This is intentionally a thin orchestration layer. The heavy work is partitioned by
-walk-forward calendar blocks so independent OOS blocks can execute concurrently.
-Every block independently rebuilds its prior-information training set, features,
-liquidity universe, masters, OOF router and execution ledger; a final aggregation
-step combines the disjoint OOS ledgers in chronological order and recomputes the
-portfolio/equity statistics. The methodology is therefore unchanged by parallelism.
-
-The implementation imports the Phase 6.1 engine rather than duplicating model logic.
-The month/block argument is supplied through PHASE62_BLOCK_START/END. A future
-optimization can cache the common feature table as an artifact, but this launcher
-keeps that optimization separate from model semantics.
+Runs the full Phase 6.1 research engine with the Phase 6.2 configuration and
+an isolated OOS calendar block. Parallelism is orchestration only: features,
+labels, models, costs and execution rules remain unchanged.
 """
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 
 import yaml
 
-from backtest.run_backtest_phase61 import run_backtest
-
-
-HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent
+ROOT = Path(__file__).resolve().parents[1]
+CFG62 = ROOT / "backtest" / "config_phase62.yaml"
+CFG61 = ROOT / "backtest" / "config_phase61.yaml"
+PHASE61_OUT = ROOT / "backtest" / "results" / "phase61"
 
 
 def main() -> None:
-    config_path = ROOT / "backtest" / "config_phase62.yaml"
-    with open(config_path, "r", encoding="utf-8") as f:
-        cfg = yaml.safe_load(f)
-
     start = os.environ.get("PHASE62_BLOCK_START")
     end = os.environ.get("PHASE62_BLOCK_END")
-    output_dir = os.environ.get("PHASE62_OUTPUT_DIR", str(ROOT / "backtest" / "results" / "phase62"))
+    output_dir = Path(os.environ.get("PHASE62_OUTPUT_DIR", str(ROOT / "backtest" / "results" / "phase62")))
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Phase 6.2 block start={start!r} end={end!r} output={output_dir}", flush=True)
-
-    # The Phase 6.1 engine accepts optional environment/date controls. We deliberately
-    # do not alter features, labels, model hyperparameters, costs or execution rules.
+    cfg = yaml.safe_load(CFG62.read_text(encoding="utf-8"))
     if start:
-        os.environ["BACKTEST_START"] = start
+        cfg["backtest_start"] = start
     if end:
-        os.environ["BACKTEST_END"] = end
-    os.environ["PHASE62_OUTPUT_DIR"] = output_dir
+        cfg["backtest_end"] = end
 
-    run_backtest(cfg)
+    # The proven Phase 6.1 engine is reused unchanged. We temporarily provide
+    # it with the Phase 6.2 config; each matrix runner is an isolated VM.
+    original_cfg = CFG61.read_text(encoding="utf-8") if CFG61.exists() else None
+    shutil.copy2(CFG62, CFG61)
+    if original_cfg is not None:
+        phase_cfg = yaml.safe_load(original_cfg)
+    else:
+        phase_cfg = None
+    try:
+        CFG61.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
+        # Remove stale output from any prior invocation in this VM.
+        if PHASE61_OUT.exists():
+            shutil.rmtree(PHASE61_OUT)
+        from backtest import run_backtest_phase61 as engine
+        print(f"Phase 6.2 block start={start!r} end={end!r} output={output_dir}", flush=True)
+        engine.main()
+        PHASE61_OUT.mkdir(parents=True, exist_ok=True)
+        for item in PHASE61_OUT.iterdir():
+            target = output_dir / item.name
+            if target.exists():
+                if target.is_dir():
+                    shutil.rmtree(target)
+                else:
+                    target.unlink()
+            shutil.move(str(item), str(target))
+    finally:
+        if phase_cfg is not None:
+            CFG61.write_text(original_cfg, encoding="utf-8")
+        else:
+            CFG61.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
