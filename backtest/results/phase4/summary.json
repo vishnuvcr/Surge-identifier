@@ -9,7 +9,7 @@
   "max_drawdown_pct": -0.0807832967848725,
   "profitable_execution_days": 2,
   "losing_execution_days": 5,
-  "no_trade_days": 96,
+  "no_trade_days": 97,
   "target_distribution": {
     "0.03": 3,
     "0.04": 4
