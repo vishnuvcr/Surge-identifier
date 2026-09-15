@@ -21,8 +21,8 @@
   "portfolio_fullness_ratio": 1.0,
   "days_using_expected_return_layer": 101,
   "return_rank_validation": {
-    "median_rank_ic": 0.27418148139763393,
-    "median_mae": 0.015666291117668152
+    "median_rank_ic": 0.2741814608876572,
+    "median_mae": 0.01566629484295845
   },
   "anti_lookahead": [
     "Both models are fit only on rows whose realized next-session label date is strictly before the prediction day.",
