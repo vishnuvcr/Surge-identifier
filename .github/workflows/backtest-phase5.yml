@@ -1,0 +1,56 @@
+name: Surge Strategy Backtest Phase 5
+
+on:
+  push:
+    branches: [backtest-paytm-intraday]
+    paths-ignore:
+      - 'backtest/results/phase5/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: phase5-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            phase5-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Phase 5 backtest
+        run: python backtest/run_backtest_phase5.py
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: surge-phase5-results
+          path: backtest/results/phase5
+          if-no-files-found: error
+
+      - name: Commit Phase 5 results
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin backtest-paytm-intraday
+          git rebase origin/backtest-paytm-intraday || true
+          git add backtest/results/phase5
+          git diff --cached --quiet && exit 0
+          git commit -m 'Update Phase 5 backtest results'
+          git push origin HEAD:backtest-paytm-intraday
