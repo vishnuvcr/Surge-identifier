@@ -31,14 +31,18 @@ def train_experts(train_df: pd.DataFrame, target_levels=(0.025, 0.03), stop_loss
         xcols = list(dict.fromkeys(cols + ["regime_code"]))
         if name == "event" and float(work[EVENT_FEATURES].abs().sum().sum()) == 0:
             continue
-        valid = work.dropna(subset=xcols + target_cols)
+        valid = work.dropna(subset=xcols + target_cols).copy()
         if len(valid) < 500:
             continue
 
         signal = expert_rule_score(valid, name)
         threshold = float(np.quantile(signal, 0.70))
-        X = valid[xcols].fillna(0.0).to_numpy(dtype=np.float32, copy=False)
-        y = valid[target_cols].astype(np.float32).clip(-0.10, 0.10).to_numpy(copy=False)
+
+        # Keep feature names during fit/predict. Besides removing sklearn's
+        # feature-name warning, this makes it harder to accidentally score a
+        # model with a reordered numpy matrix.
+        X = valid[xcols].fillna(0.0).astype(float)
+        y = valid[target_cols].astype(float).clip(-0.10, 0.10)
 
         model = ExtraTreesRegressor(
             n_estimators=80,
