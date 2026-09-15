@@ -6,15 +6,15 @@ validation_days: 60
 liquidity_lookback_sessions: 60
 min_avg_turnover_cr: 5
 fallback_min_turnover_cr: 1
-max_trades_per_day: 5
+portfolio_sizes: [1, 3, 5]
+correlation_lookback_sessions: 60
+diversification_lambda: 0.75
 force_min_one_trade: true
 surge_threshold: 0.03
 min_candidate_probability: 0.58
 seed: 42
-# Leave blank to use the earliest valid out-of-sample date / latest available date.
 backtest_start: null
 backtest_end: null
-# Two modes are reported by the workflow: close_exit and tp3_close.
 exit_mode: tp3_close
 take_profit_pct: 0.03
 costs:
