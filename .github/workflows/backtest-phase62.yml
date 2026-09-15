@@ -241,8 +241,6 @@ jobs:
               print(p, 'OK')
           PY
       - name: Publish Phase 6.2 completion status
-        env:
-          GITHUB_SHA: ${{ github.sha }}
         run: |
           mkdir -p reports
           python - <<'PY'
@@ -280,3 +278,45 @@ jobs:
           name: surge-phase62-results
           path: backtest/results/phase62/blocks/
           if-no-files-found: error
+
+  status:
+    if: ${{ always() }}
+    needs: [prepare-data, backtest, aggregate]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish final Phase 6.2 status
+        env:
+          PREPARE_RESULT: ${{ needs.prepare-data.result }}
+          BACKTEST_RESULT: ${{ needs.backtest.result }}
+          AGGREGATE_RESULT: ${{ needs.aggregate.result }}
+        run: |
+          mkdir -p reports
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          results = {
+              'prepare_data': os.environ['PREPARE_RESULT'],
+              'backtest': os.environ['BACKTEST_RESULT'],
+              'aggregate': os.environ['AGGREGATE_RESULT'],
+          }
+          overall = 'completed' if all(v == 'success' for v in results.values()) else 'failed'
+          payload = {
+              'workflow': 'Surge Strategy Backtest Phase 6.2',
+              'phase': 'backtest',
+              'status': overall,
+              'run_id': int(os.environ['GITHUB_RUN_ID']),
+              'run_attempt': int(os.environ['GITHUB_RUN_ATTEMPT']),
+              'commit': os.environ['GITHUB_SHA'],
+              'branch': os.environ['GITHUB_REF_NAME'],
+              'job_results': results,
+              'updated_at_utc': datetime.now(timezone.utc).isoformat(),
+          }
+          Path('reports/phase62_status.json').write_text(json.dumps(payload, indent=2) + '\n')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add reports/phase62_status.json
+          git diff --cached --quiet || git commit -m 'Phase 6.2: publish final status'
+          git push
