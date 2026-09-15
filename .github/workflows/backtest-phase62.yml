@@ -21,36 +21,43 @@ jobs:
     timeout-minutes: 180
     outputs:
       matrix: ${{ steps.discover.outputs.matrix }}
+      data_cache_key: ${{ steps.discover.outputs.data_cache_key }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
+
       - name: Install dependencies
         run: pip install -r requirements.txt
+
       - name: Validate code and config before data work
         run: python backtest/phase62_preflight.py --config-only
-      - name: Download full Phase 6.2 data once
+
+      - name: Restore persistent master dataset release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          python - <<'PY'
-          import yaml
-          from src.nse_data import load_prices
-          from src.nse_fo import load_fo
-          cfg = yaml.safe_load(open('backtest/config_phase62.yaml'))
-          lookback = int(cfg['lookback_days'])
-          print(f'Preparing up to {lookback} calendar days of cash + F&O data', flush=True)
-          prices = load_prices('data/cache', lookback)
-          fo = load_fo('data/cache', lookback)
-          assert len(prices) > 1000, f'Cash data unexpectedly small: {len(prices)} rows'
-          assert not prices.empty and {'date','symbol','open','high','low','close','volume'}.issubset(prices.columns)
-          assert not fo.empty and {'date','symbol','fut_oi','fut_oi_change','fut_volume','call_oi','put_oi','pcr'}.issubset(fo.columns)
-          print(f'Prepared prices={len(prices):,} F&O={len(fo):,}', flush=True)
-          PY
-      - name: Validate prepared cache and discover chronological blocks
+          mkdir -p /tmp/master-release data/cache
+          if ! gh release view phase62-data --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'ERROR: persistent release phase62-data does not exist.'
+            echo 'Run .github/workflows/prepare-master-data.yml once to bootstrap the NSE master dataset.'
+            exit 1
+          fi
+          gh release download phase62-data \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern 'phase62-master-data.tar.zst' \
+            --dir /tmp/master-release \
+            --clobber
+          tar -C data -I 'zstd -T0' -xf /tmp/master-release/phase62-master-data.tar.zst
+
+      - name: Validate persistent master dataset and discover shards
         id: discover
         run: |
           python - <<'PY' >> "$GITHUB_OUTPUT"
+          import hashlib
           import json
           from pathlib import Path
           import pandas as pd
@@ -59,8 +66,10 @@ jobs:
           cfg = yaml.safe_load(open('backtest/config_phase62.yaml'))
           p = Path('data/cache/prices.parquet')
           f = Path('data/cache/fo.parquet')
-          assert p.exists(), 'prices.parquet missing after preparation'
-          assert f.exists(), 'fo.parquet missing after preparation'
+          m = Path('data/cache/manifest.json')
+          assert p.exists(), 'prices.parquet missing from persistent snapshot'
+          assert f.exists(), 'fo.parquet missing from persistent snapshot'
+          assert m.exists(), 'manifest.json missing from persistent snapshot'
 
           px = pd.read_parquet(p, columns=['date','symbol'])
           fo = pd.read_parquet(f, columns=['date','symbol'])
@@ -69,13 +78,19 @@ jobs:
           cash_dates = sorted(px.date.unique())
           fo_dates = sorted(fo.date.unique())
 
+          manifest = json.loads(m.read_text())
+          assert int(manifest['cash']['rows']) == len(pd.read_parquet(p, columns=['date'])), 'Cash manifest row count mismatch'
+          assert int(manifest['fno']['rows']) == len(pd.read_parquet(f, columns=['date'])), 'F&O manifest row count mismatch'
+          assert manifest['cash']['min_date'] == cash_dates[0].strftime('%Y-%m-%d')
+          assert manifest['cash']['max_date'] == cash_dates[-1].strftime('%Y-%m-%d')
+
           min_train = int(cfg['min_train_days'])
           assert len(cash_dates) >= min_train + 5, f'Insufficient cash history: {len(cash_dates)} dates'
           assert len(fo_dates) >= min(120, len(cash_dates)), f'Insufficient F&O history: {len(fo_dates)} dates'
 
           min_date = pd.Timestamp(cash_dates[0])
           max_date = pd.Timestamp(cash_dates[-1])
-          print(f'cache OK: cash_dates={len(cash_dates)} fo_dates={len(fo_dates)} min={min_date.date()} max={max_date.date()}', flush=True)
+          print(f'persistent dataset OK: cash_rows={len(pd.read_parquet(p, columns=["date"])):,} fo_rows={len(pd.read_parquet(f, columns=["date"])):,} cash_dates={len(cash_dates)} fo_dates={len(fo_dates)} min={min_date.date()} max={max_date.date()}', flush=True)
 
           blocks = []
           cursor = pd.Timestamp(min_date.year, min_date.month, 1)
@@ -95,20 +110,24 @@ jobs:
           assert blocks[0]['start'] <= min_date.strftime('%Y-%m-%d') < blocks[-1]['end']
           assert blocks[-1]['end'] > max_date.strftime('%Y-%m-%d')
 
-          matrix = {'block': blocks}
+          # GitHub Actions requires an object-valued matrix to use include:
+          # [{start: ..., end: ...}, ...]. A block dimension containing objects
+          # is rejected by the matrix expander.
+          matrix = {'include': blocks}
           matrix_json = json.dumps(matrix, separators=(',', ':'))
           print('discovered matrix:', matrix_json, flush=True)
 
-          # GITHUB_OUTPUT must contain one valid name=value record.
-          # The matrix itself is an object whose block key is an array of objects;
-          # this is the supported form for a dynamically generated GitHub Actions matrix.
+          data_hash = hashlib.sha256(m.read_bytes()).hexdigest()[:16]
+          cache_key = f'phase62-master-v1-{data_hash}'
           print('matrix=' + matrix_json)
+          print('data_cache_key=' + cache_key)
           PY
-      - name: Cache prepared data for all shards
-        uses: actions/cache@v4
+
+      - name: Cache persistent dataset for all shards
+        uses: actions/cache/save@v4
         with:
           path: data/cache
-          key: phase62-data-v5-${{ runner.os }}-${{ hashFiles('backtest/config_phase62.yaml', 'src/nse_data.py', 'src/nse_fo.py') }}
+          key: ${{ steps.discover.outputs.data_cache_key }}
 
   backtest:
     needs: prepare-data
@@ -120,43 +139,54 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare-data.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
+
       - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Restore prepared data
+
+      - name: Restore persistent prepared data
         uses: actions/cache/restore@v4
         with:
           path: data/cache
-          key: phase62-data-v5-${{ runner.os }}-${{ hashFiles('backtest/config_phase62.yaml', 'src/nse_data.py', 'src/nse_fo.py') }}
+          key: ${{ needs.prepare-data.outputs.data_cache_key }}
           fail-on-cache-miss: true
+
       - name: Validate restored cache and shard configuration
         env:
-          PHASE62_BLOCK_START: ${{ matrix.block.start }}
-          PHASE62_BLOCK_END: ${{ matrix.block.end }}
+          PHASE62_BLOCK_START: ${{ matrix.start }}
+          PHASE62_BLOCK_END: ${{ matrix.end }}
         run: |
           python backtest/phase62_preflight.py
           python - <<'PY'
+          import json
+          from pathlib import Path
           import pandas as pd
           px = pd.read_parquet('data/cache/prices.parquet', columns=['date'])
           dates = pd.to_datetime(px['date']).dt.normalize()
-          start = pd.Timestamp('${{ matrix.block.start }}')
-          end = pd.Timestamp('${{ matrix.block.end }}')
+          start = pd.Timestamp('${{ matrix.start }}')
+          end = pd.Timestamp('${{ matrix.end }}')
+          manifest = json.loads(Path('data/cache/manifest.json').read_text())
           assert dates.min() < end, f'Block {start.date()}-{end.date()} has no available cash history'
           assert dates.max() >= start, f'Block {start.date()}-{end.date()} lies after available cash history'
+          assert manifest['cash']['min_date'] == dates.min().strftime('%Y-%m-%d')
+          assert manifest['cash']['max_date'] == dates.max().strftime('%Y-%m-%d')
           print(f'Shard cache/config OK: available={dates.min().date()}..{dates.max().date()} block={start.date()}..{end.date()}')
           PY
+
       - name: Run Phase 6.2 shard
         env:
-          PHASE62_BLOCK_START: ${{ matrix.block.start }}
-          PHASE62_BLOCK_END: ${{ matrix.block.end }}
-          PHASE62_OUTPUT_DIR: backtest/results/phase62/${{ matrix.block.start }}_${{ matrix.block.end }}
+          PHASE62_BLOCK_START: ${{ matrix.start }}
+          PHASE62_BLOCK_END: ${{ matrix.end }}
+          PHASE62_OUTPUT_DIR: backtest/results/phase62/${{ matrix.start }}_${{ matrix.end }}
         run: python backtest/run_backtest_phase62.py
+
       - name: Validate shard outputs
         env:
-          PHASE62_OUTPUT_DIR: backtest/results/phase62/${{ matrix.block.start }}_${{ matrix.block.end }}
+          PHASE62_OUTPUT_DIR: backtest/results/phase62/${{ matrix.start }}_${{ matrix.end }}
         run: |
           test -d "$PHASE62_OUTPUT_DIR"
           test -s "$PHASE62_OUTPUT_DIR/summary.json"
@@ -169,11 +199,12 @@ jobs:
           assert not missing, f'Missing result fields: {missing}'
           print('Shard output schema OK')
           PY
+
       - name: Upload shard results
         uses: actions/upload-artifact@v4
         with:
-          name: phase62-${{ matrix.block.start }}-${{ matrix.block.end }}
-          path: backtest/results/phase62/${{ matrix.block.start }}_${{ matrix.block.end }}/
+          name: phase62-${{ matrix.start }}-${{ matrix.end }}
+          path: backtest/results/phase62/${{ matrix.start }}_${{ matrix.end }}/
           if-no-files-found: error
 
   aggregate:
