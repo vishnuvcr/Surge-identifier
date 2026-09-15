@@ -1,6 +1,6 @@
 {
   "asof_date": "2026-09-11",
-  "generated_at_ist": "2026-09-15T10:46:09.703323+05:30",
+  "generated_at_ist": "2026-09-15T10:56:49.846425+05:30",
   "event_definition": "Next session intraday high >= +3% from next session open",
   "universe": "NSE CM EQ series with sufficient median turnover",
   "data_layers": [
