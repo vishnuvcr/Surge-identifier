@@ -1,0 +1,235 @@
+{
+  "phase": "6.1",
+  "engine": "full_information_tail_moe_oof_router",
+  "config": {
+    "initial_capital": 100000,
+    "lookback_days": 420,
+    "training_lookback_sessions": 300,
+    "min_train_days": 120,
+    "min_positive_labels": 20,
+    "liquidity_lookback_sessions": 60,
+    "min_avg_turnover_cr": 5,
+    "portfolio_sizes": [
+      1,
+      3,
+      5
+    ],
+    "target_levels": [
+      0.025,
+      0.03,
+      0.04,
+      0.05
+    ],
+    "stop_loss_pct": 0.0125,
+    "cost_hurdle_pct": 0.0015,
+    "risk_penalty_pct": 0.001,
+    "min_hit_probability": 0.08,
+    "min_risk_adjusted_edge": 0.001,
+    "max_candidates_per_day": 5,
+    "seed": 42,
+    "backtest_start": null,
+    "backtest_end": null,
+    "objective_daily_net_pct": 0.025,
+    "objective_monthly_pct": 0.3,
+    "costs": {
+      "brokerage_per_order": 20.0,
+      "exchange_turnover_rate": 3.45e-05,
+      "stt_sell_rate": 0.00025,
+      "sebi_turnover_rate": 1e-06,
+      "stamp_buy_rate": 3e-05,
+      "gst_rate": 0.18,
+      "slippage_per_side": 0.0005
+    },
+    "event_inputs": {
+      "news_path": "data/events/news.csv",
+      "corporate_actions_path": "data/events/corporate_actions.csv"
+    }
+  },
+  "diagnostics": {
+    "signal_days": 164,
+    "candidate_rows": 0,
+    "qualified_rows": 0,
+    "trade_days": 0,
+    "no_trade_days": 164,
+    "expert_refits": [
+      {
+        "period": "2026-01",
+        "train_days": 119,
+        "experts": [],
+        "router": false
+      },
+      {
+        "period": "2026-02",
+        "train_days": 130,
+        "experts": [
+          "breakout",
+          "fno",
+          "mean_reversion",
+          "momentum",
+          "relative_strength",
+          "universal",
+          "volatility"
+        ],
+        "router": false
+      },
+      {
+        "period": "2026-03",
+        "train_days": 150,
+        "experts": [
+          "breakout",
+          "fno",
+          "mean_reversion",
+          "momentum",
+          "relative_strength",
+          "universal",
+          "volatility"
+        ],
+        "router": true
+      },
+      {
+        "period": "2026-04",
+        "train_days": 169,
+        "experts": [
+          "breakout",
+          "fno",
+          "mean_reversion",
+          "momentum",
+          "relative_strength",
+          "universal",
+          "volatility"
+        ],
+        "router": true
+      },
+      {
+        "period": "2026-05",
+        "train_days": 189,
+        "experts": [
+          "breakout",
+          "fno",
+          "mean_reversion",
+          "momentum",
+          "relative_strength",
+          "universal",
+          "volatility"
+        ],
+        "router": true
+      },
+      {
+        "period": "2026-06",
+        "train_days": 208,
+        "experts": [
+          "breakout",
+          "fno",
+          "mean_reversion",
+          "momentum",
+          "relative_strength",
+          "universal",
+          "volatility"
+        ],
+        "router": true
+      },
+      {
+        "period": "2026-07",
+        "train_days": 229,
+        "experts": [
+          "breakout",
+          "fno",
+          "mean_reversion",
+          "momentum",
+          "relative_strength",
+          "universal",
+          "volatility"
+        ],
+        "router": true
+      },
+      {
+        "period": "2026-08",
+        "train_days": 252,
+        "experts": [
+          "breakout",
+          "fno",
+          "mean_reversion",
+          "momentum",
+          "relative_strength",
+          "universal",
+          "volatility"
+        ],
+        "router": true
+      },
+      {
+        "period": "2026-09",
+        "train_days": 273,
+        "experts": [
+          "breakout",
+          "fno",
+          "mean_reversion",
+          "momentum",
+          "relative_strength",
+          "universal",
+          "volatility"
+        ],
+        "router": true
+      }
+    ]
+  },
+  "summaries": {
+    "1": {
+      "final_equity": 100000.0,
+      "net_pnl": 0.0,
+      "net_return_pct": 0.0,
+      "trade_count": 0,
+      "execution_days": 0,
+      "no_trade_days": 164,
+      "win_rate": 0.0,
+      "profit_factor": 0.0,
+      "max_drawdown_pct": 0.0,
+      "target_hit_rate": 0.0,
+      "stop_hit_rate": 0.0,
+      "average_trade_net_pct": 0.0,
+      "daily_2_5pct_attainment_on_trade_days": 0.0,
+      "monthly_30pct_target_hit": false,
+      "monthly_results": [],
+      "expert_results": [],
+      "regime_results": []
+    },
+    "3": {
+      "final_equity": 100000.0,
+      "net_pnl": 0.0,
+      "net_return_pct": 0.0,
+      "trade_count": 0,
+      "execution_days": 0,
+      "no_trade_days": 164,
+      "win_rate": 0.0,
+      "profit_factor": 0.0,
+      "max_drawdown_pct": 0.0,
+      "target_hit_rate": 0.0,
+      "stop_hit_rate": 0.0,
+      "average_trade_net_pct": 0.0,
+      "daily_2_5pct_attainment_on_trade_days": 0.0,
+      "monthly_30pct_target_hit": false,
+      "monthly_results": [],
+      "expert_results": [],
+      "regime_results": []
+    },
+    "5": {
+      "final_equity": 100000.0,
+      "net_pnl": 0.0,
+      "net_return_pct": 0.0,
+      "trade_count": 0,
+      "execution_days": 0,
+      "no_trade_days": 164,
+      "win_rate": 0.0,
+      "profit_factor": 0.0,
+      "max_drawdown_pct": 0.0,
+      "target_hit_rate": 0.0,
+      "stop_hit_rate": 0.0,
+      "average_trade_net_pct": 0.0,
+      "daily_2_5pct_attainment_on_trade_days": 0.0,
+      "monthly_30pct_target_hit": false,
+      "monthly_results": [],
+      "expert_results": [],
+      "regime_results": []
+    }
+  },
+  "runtime_seconds": 16265.78639779
+}
