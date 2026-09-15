@@ -45,6 +45,34 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Publish master-data refresh status
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p reports
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          p = Path('reports/phase62_status.json')
+          payload = {
+              'workflow': 'Prepare Persistent NSE Master Data',
+              'phase': 'master_data_refresh',
+              'status': 'running',
+              'run_id': int(os.environ['GITHUB_RUN_ID']),
+              'run_attempt': int(os.environ['GITHUB_RUN_ATTEMPT']),
+              'commit': os.environ['GITHUB_SHA'],
+              'branch': os.environ['GITHUB_REF_NAME'],
+              'updated_at_utc': datetime.now(timezone.utc).isoformat(),
+          }
+          p.write_text(json.dumps(payload, indent=2) + '\n')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add reports/phase62_status.json
+          git diff --cached --quiet || git commit -m 'Phase 6.2: publish master-data status'
+          git push
+
       - name: Restore existing persistent snapshot when available
         env:
           GH_TOKEN: ${{ github.token }}
@@ -110,11 +138,31 @@ jobs:
           fi
           echo 'Persistent master dataset published.'
 
+      - name: Publish master-data completion status
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          p = Path('reports/phase62_status.json')
+          payload = json.loads(p.read_text())
+          payload.update({
+              'status': 'master_data_ready',
+              'updated_at_utc': datetime.now(timezone.utc).isoformat(),
+          })
+          p.write_text(json.dumps(payload, indent=2) + '\n')
+          PY
+          git add reports/phase62_status.json
+          git commit -m 'Phase 6.2: master data ready'
+          git push
+
       - name: Dispatch Phase 6.2 backtest after master dataset is ready
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh workflow run backtest-phase62.yml \
             --repo "$GITHUB_REPOSITORY" \
-            --ref phase6.2-parallel-long-history
+            --ref phase6.2-persistent-master-data
           echo 'Phase 6.2 backtest workflow dispatched.'
