@@ -24,6 +24,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: surge-master-data
@@ -108,3 +109,12 @@ jobs:
               --notes 'Persistent snapshot used by Phase 6.2 and later backtests. Refresh through the Prepare Persistent NSE Master Data workflow; backtests do not download NSE history directly.'
           fi
           echo 'Persistent master dataset published.'
+
+      - name: Dispatch Phase 6.2 backtest after master dataset is ready
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run backtest-phase62.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref phase6.2-parallel-long-history
+          echo 'Phase 6.2 backtest workflow dispatched.'
