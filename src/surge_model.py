@@ -46,9 +46,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     df["close_pos"] = _safe_div(close - low, (high - low))
 
     tr = pd.concat([(high - low), (high - prev).abs(), (low - prev).abs()], axis=1).max(axis=1)
-    df["atr_pct"] = _safe_div(
-        tr.groupby(df["symbol"]).transform(lambda s: s.rolling(14, min_periods=8).mean()), close
-    )
+    df["atr_pct"] = _safe_div(tr.groupby(df["symbol"]).transform(lambda s: s.rolling(14, min_periods=8).mean()), close)
 
     delta = g["close"].diff()
     up = delta.clip(lower=0)
@@ -88,6 +86,11 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     df["fut_volume_rel20"] = _safe_div(df["fut_volume"], fvol_mean)
     pcr_mean = g["pcr"].transform(lambda s: s.rolling(20, min_periods=5).mean())
     df["pcr_dev20"] = df["pcr"] - pcr_mean
+    # Neutral values for stocks without an active derivatives contract.
+    df["fut_oi_z20"] = df["fut_oi_z20"].replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    df["fut_oi_change_z20"] = df["fut_oi_change_z20"].replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    df["fut_volume_rel20"] = df["fut_volume_rel20"].replace([np.inf, -np.inf], np.nan).fillna(1.0)
+    df["pcr_dev20"] = df["pcr_dev20"].replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
     daily = df.groupby("date").agg(
         market_ret1=("ret1", "mean"),
