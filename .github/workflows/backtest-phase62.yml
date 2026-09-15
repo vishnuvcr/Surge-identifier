@@ -48,7 +48,7 @@ jobs:
         id: discover
         run: |
           python - <<'PY'
-          import hashlib, json
+          import hashlib, json, os
           from pathlib import Path
           import pandas as pd
           import yaml
@@ -99,7 +99,7 @@ jobs:
           data_hash = hashlib.sha256(m.read_bytes()).hexdigest()[:16]
           cache_key = f'phase62-master-v1-{data_hash}'
           print('discovered matrix:', matrix_json, flush=True)
-          with open('${GITHUB_OUTPUT}', 'a') as out:
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
               out.write('matrix=' + matrix_json + '\n')
               out.write('data_cache_key=' + cache_key + '\n')
           PY
