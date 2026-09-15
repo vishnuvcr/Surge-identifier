@@ -1,0 +1,34 @@
+{
+  "architecture": "regime-aware mixture-of-experts with expert-specific multi-target RandomForest return models",
+  "experts": [
+    "momentum",
+    "breakout",
+    "fno",
+    "mean_reversion",
+    "volatility",
+    "relative_strength"
+  ],
+  "event_inputs_present": {
+    "news": false,
+    "corporate_actions": false
+  },
+  "monthly_refits": 9,
+  "runtime_seconds": 3865.925665863,
+  "anti_lookahead": [
+    "Training rows use labels whose next-session label date is strictly before the signal day.",
+    "All strategy models are refit monthly using only prior sessions.",
+    "Liquidity is precomputed with a trailing window shifted one session, so each signal uses only prior liquidity history.",
+    "Signals are produced EOD and executed at the next session open.",
+    "Daily-bar TP/SL conflicts are resolved conservatively as stop-first.",
+    "Event inputs are optional and must carry timestamps; only information mapped to the signal date is used."
+  ],
+  "optimization": [
+    "One multi-output RandomForest per expert instead of one forest per expert/target.",
+    "Point-in-time liquidity eligibility precomputed once for the backtest.",
+    "Vectorized candidate/target selection."
+  ],
+  "objective": {
+    "daily_net_pct": 0.025,
+    "monthly_pct": 0.3
+  }
+}
