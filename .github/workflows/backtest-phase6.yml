@@ -59,9 +59,24 @@ jobs:
 
       - name: Commit Phase 6 results
         run: |
+          set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add backtest/results/phase6
           git diff --cached --quiet && exit 0
           git commit -m 'Update Phase 6 backtest results'
-          git push origin HEAD:backtest-paytm-intraday
+
+          # The backtest can run for several minutes while the branch changes.
+          # Rebase the generated-results commit onto the latest branch tip before
+          # pushing so a concurrent code/config commit does not cause a needless
+          # non-fast-forward failure.
+          for attempt in 1 2 3; do
+            git fetch origin backtest-paytm-intraday
+            if git rebase origin/backtest-paytm-intraday; then
+              git push origin HEAD:backtest-paytm-intraday && exit 0
+            fi
+            git rebase --abort || true
+            sleep 5
+          done
+          echo 'Unable to publish Phase 6 results after 3 attempts.'
+          exit 1
