@@ -5,7 +5,9 @@ on:
     branches: [backtest-paytm-intraday]
     paths:
       - 'src/moe_engine.py'
+      - 'src/moe_engine_fast.py'
       - 'backtest/run_backtest_phase6.py'
+      - 'backtest/run_backtest_phase6_fast.py'
       - 'backtest/config_phase6.yaml'
       - '.github/workflows/backtest-phase6.yml'
       - 'data/events/**'
@@ -39,7 +41,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run Phase 6 backtest
-        run: python backtest/run_backtest_phase6.py
+        run: python backtest/run_backtest_phase6_fast.py
 
       - name: Upload results
         uses: actions/upload-artifact@v4
