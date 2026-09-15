@@ -1,31 +1,24 @@
-# Point-in-Time Intraday Backtest
+# Point-in-Time Intraday Backtest — Daily Trade Mode
 
-Initial capital: ₹1,00,000; maximum 5 simultaneous trades; equal capital split among selected trades.
+Initial capital: ₹1,00,000; maximum 5 simultaneous trades; equal capital split.
+At least 1 trade is selected each trading day whenever an executable NSE equity candidate exists.
+Days where the model has no threshold-qualified signal use an explicitly marked `forced_fallback` top-ranked candidate.
 
-## Results
+| Mode | Final equity | Net P&L | Return | Fees | Trades | Win rate | Max DD | Fallback days |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| close_exit | ₹41,049.00 | ₹-58,951.00 | -58.95% | ₹23,620.41 | 455 | 32.31% | -60.87% | 87 |
+| tp3_close | ₹62,522.88 | ₹-37,477.12 | -37.48% | ₹24,543.95 | 455 | 49.45% | -42.45% | 87 |
 
-| Mode | Final equity | Net P&L | Return | Fees | Trades | Win rate | Max DD |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| close_exit | ₹119,971.72 | ₹19,971.72 | 19.97% | ₹505.90 | 6 | 83.33% | -4.31% |
-| tp3_close | ₹110,016.94 | ₹10,016.94 | 10.02% | ₹508.02 | 6 | 83.33% | -4.40% |
+## Key safeguards
 
-## Execution assumptions
+- Point-in-time model retraining; no future labels cross the prediction-day boundary.
+- Trailing liquidity only; no full-sample liquidity filter.
+- EOD signal, next-session-open entry.
+- 0.05% slippage per side.
+- Paytm Money brokerage modeled at ₹20 per executed order; two orders per completed trade.
+- Intraday statutory charges included: exchange turnover, 0.025% sell-side STT, SEBI turnover fee, buy-side stamp duty, and 18% GST on brokerage + exchange charges.
+- Daily-bar limitation: exact intraday price path is unavailable; the +3% target case is therefore a separate scenario.
 
-- Entry: next trading day open after the EOD signal.
-- Exit 1: same-day close.
-- Exit 2: take profit at +3% when the next-day high reaches the target; otherwise close.
-- Slippage: 0.05% per side.
-- Paytm Money brokerage: ₹20 per executed order; two orders per completed trade.
-- Modeled statutory charges: exchange turnover, 0.025% STT on sell, 0.0001% SEBI turnover fee, 0.003% stamp duty on buy, and 18% GST on brokerage + exchange charges.
+## Interpretation
 
-## Anti-lookahead controls
-- For each prediction month, training uses only feature rows dated strictly before the prediction day.
-- Training rows are additionally removed when their next-session label outcome would occur on or after the prediction day.
-- The model threshold is selected only inside the historical training/validation window preceding that prediction month.
-- Liquidity uses only turnover observations from the trailing sessions strictly before each signal date.
-- The signal is generated from EOD data; entry occurs on the next trading session open.
-- Next-day OHLC is used only after the signal is fixed to calculate realized trade outcome.
-- Capital is split equally across the selected trades using starting equity for that day; no leverage is used.
-- Daily bars cannot reconstruct the exact intraday path; the +3% target scenario is therefore reported separately.
-
-The backtest uses daily OHLC data. Exact intraday timestamp/fill quality cannot be reconstructed from daily bars, so the +3% target mode is reported separately rather than silently treated as the only result.
+The forced-fallback days are intentionally reported separately. A daily-trade requirement can materially reduce the quality of the trading edge because it prevents the model from staying flat when no strong signal exists.
