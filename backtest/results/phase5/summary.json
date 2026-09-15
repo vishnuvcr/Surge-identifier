@@ -1,0 +1,587 @@
+{
+  "objective": {
+    "daily_net_target_pct": 0.025,
+    "monthly_target_pct": 0.3
+  },
+  "calibration": "Isotonic calibration is fit only on each model's trailing 60-session validation block and then applied to later signal days.",
+  "anti_lookahead": [
+    "All labels used for model fitting have label dates strictly before each signal day.",
+    "Liquidity is computed only from sessions strictly before the signal day.",
+    "Signals are generated at EOD and entered at the next session open.",
+    "Portfolio allocation is based only on starting equity for the trading day.",
+    "If TP and SL are both touched in a daily bar, the conservative simulator assumes SL first."
+  ],
+  "variants": [
+    {
+      "stop_loss_pct": 0.015,
+      "portfolio_size": 1,
+      "final_equity": 68435.26958932028,
+      "net_pnl": -31564.730410679724,
+      "net_return_pct": -0.3156473041067972,
+      "trade_count": 81,
+      "execution_days": 81,
+      "no_trade_days": 21,
+      "win_rate": 0.2962962962962963,
+      "profit_factor": 0.6138849823015218,
+      "max_drawdown_pct": -0.379311279206515,
+      "target_hit_rate": 0.2839506172839506,
+      "stop_hit_rate": 0.691358024691358,
+      "average_trade_net_pct": -0.004511488764278593,
+      "average_win_pnl": 2091.0343077102934,
+      "average_loss_pnl": -1434.2026981706456,
+      "daily_2_5pct_attainment_on_trade_days": 0.0,
+      "monthly_30pct_target_hit": false,
+      "monthly_results": [
+        {
+          "month": "2026-04",
+          "starting_equity": 100000.0,
+          "net_pnl": 4770.729306158331,
+          "return_pct": 0.04770729306158339
+        },
+        {
+          "month": "2026-05",
+          "starting_equity": 104770.72930615833,
+          "net_pnl": -4141.8858939672755,
+          "return_pct": -0.039532853511632715
+        },
+        {
+          "month": "2026-06",
+          "starting_equity": 100628.84341219105,
+          "net_pnl": 1817.9616985290045,
+          "return_pct": 0.018066010071112082
+        },
+        {
+          "month": "2026-07",
+          "starting_equity": 102446.80511072006,
+          "net_pnl": -22033.074996159066,
+          "return_pct": -0.2150684442755113
+        },
+        {
+          "month": "2026-08",
+          "starting_equity": 80413.730114561,
+          "net_pnl": -9900.728660837813,
+          "return_pct": -0.12312236538129495
+        },
+        {
+          "month": "2026-09",
+          "starting_equity": 70513.00145372318,
+          "net_pnl": -2077.731864402922,
+          "return_pct": -0.029465939919838813
+        }
+      ]
+    },
+    {
+      "stop_loss_pct": 0.015,
+      "portfolio_size": 3,
+      "final_equity": 59467.43580363055,
+      "net_pnl": -40532.56419636945,
+      "net_return_pct": -0.40532564196369447,
+      "trade_count": 207,
+      "execution_days": 81,
+      "no_trade_days": 21,
+      "win_rate": 0.25120772946859904,
+      "profit_factor": 0.5091702190017598,
+      "max_drawdown_pct": -0.4190180604419441,
+      "target_hit_rate": 0.24154589371980675,
+      "stop_hit_rate": 0.7391304347826086,
+      "average_trade_net_pct": -0.007327531200113922,
+      "average_win_pnl": 808.5983004047989,
+      "average_loss_pnl": -532.7721020478642,
+      "daily_2_5pct_attainment_on_trade_days": 0.0,
+      "monthly_30pct_target_hit": false,
+      "monthly_results": [
+        {
+          "month": "2026-04",
+          "starting_equity": 100000.0,
+          "net_pnl": 1947.4781828026157,
+          "return_pct": 0.01947478182802609
+        },
+        {
+          "month": "2026-05",
+          "starting_equity": 101947.47818280262,
+          "net_pnl": -8036.68358001343,
+          "return_pct": -0.07883160744400963
+        },
+        {
+          "month": "2026-06",
+          "starting_equity": 93910.79460278919,
+          "net_pnl": -1851.941548729198,
+          "return_pct": -0.019720220200055594
+        },
+        {
+          "month": "2026-07",
+          "starting_equity": 92058.85305405999,
+          "net_pnl": -15811.203665944699,
+          "return_pct": -0.17175103905172318
+        },
+        {
+          "month": "2026-08",
+          "starting_equity": 76247.64938811529,
+          "net_pnl": -12654.299512248039,
+          "return_pct": -0.16596314265158785
+        },
+        {
+          "month": "2026-09",
+          "starting_equity": 63593.34987586725,
+          "net_pnl": -4125.914072236669,
+          "return_pct": -0.06487964669718393
+        }
+      ]
+    },
+    {
+      "stop_loss_pct": 0.015,
+      "portfolio_size": 5,
+      "final_equity": 60183.41452647016,
+      "net_pnl": -39816.58547352984,
+      "net_return_pct": -0.3981658547352984,
+      "trade_count": 286,
+      "execution_days": 81,
+      "no_trade_days": 21,
+      "win_rate": 0.2692307692307692,
+      "profit_factor": 0.5201751046144641,
+      "max_drawdown_pct": -0.4120231278127444,
+      "target_hit_rate": 0.26223776223776224,
+      "stop_hit_rate": 0.7167832167832168,
+      "average_trade_net_pct": -0.007282078517662542,
+      "average_win_pnl": 560.5831950300516,
+      "average_loss_pnl": -397.0406291427936,
+      "daily_2_5pct_attainment_on_trade_days": 0.0,
+      "monthly_30pct_target_hit": false,
+      "monthly_results": [
+        {
+          "month": "2026-04",
+          "starting_equity": 100000.0,
+          "net_pnl": 1947.4781828026157,
+          "return_pct": 0.01947478182802609
+        },
+        {
+          "month": "2026-05",
+          "starting_equity": 101947.47818280262,
+          "net_pnl": -7768.878896802888,
+          "return_pct": -0.07620471869713596
+        },
+        {
+          "month": "2026-06",
+          "starting_equity": 94178.59928599974,
+          "net_pnl": -2292.5579482876396,
+          "return_pct": -0.024342663467797343
+        },
+        {
+          "month": "2026-07",
+          "starting_equity": 91886.0413377121,
+          "net_pnl": -16417.022731429694,
+          "return_pct": -0.17866721095418203
+        },
+        {
+          "month": "2026-08",
+          "starting_equity": 75469.0186062824,
+          "net_pnl": -10954.533346794466,
+          "return_pct": -0.14515272026980564
+        },
+        {
+          "month": "2026-09",
+          "starting_equity": 64514.48525948794,
+          "net_pnl": -4331.070733017823,
+          "return_pct": -0.06713330681625274
+        }
+      ]
+    },
+    {
+      "stop_loss_pct": 0.02,
+      "portfolio_size": 1,
+      "final_equity": 60669.624171861535,
+      "net_pnl": -39330.375828138465,
+      "net_return_pct": -0.39330375828138464,
+      "trade_count": 65,
+      "execution_days": 65,
+      "no_trade_days": 37,
+      "win_rate": 0.3076923076923077,
+      "profit_factor": 0.5071554386399335,
+      "max_drawdown_pct": -0.44837509033343426,
+      "target_hit_rate": 0.2923076923076923,
+      "stop_hit_rate": 0.676923076923077,
+      "average_trade_net_pct": -0.007451558823939997,
+      "average_win_pnl": 2023.6211950830725,
+      "average_loss_pnl": -1773.3955495511098,
+      "daily_2_5pct_attainment_on_trade_days": 0.0,
+      "monthly_30pct_target_hit": false,
+      "monthly_results": [
+        {
+          "month": "2026-04",
+          "starting_equity": 100000.0,
+          "net_pnl": 2356.7717937437583,
+          "return_pct": 0.023567717937437616
+        },
+        {
+          "month": "2026-05",
+          "starting_equity": 102356.77179374376,
+          "net_pnl": 5288.497558965881,
+          "return_pct": 0.051667295346345954
+        },
+        {
+          "month": "2026-06",
+          "starting_equity": 107645.26935270964,
+          "net_pnl": 811.8358266250116,
+          "return_pct": 0.00754176966165554
+        },
+        {
+          "month": "2026-07",
+          "starting_equity": 108457.10517933466,
+          "net_pnl": -29066.502368807676,
+          "return_pct": -0.26799998322605045
+        },
+        {
+          "month": "2026-08",
+          "starting_equity": 79390.60281052698,
+          "net_pnl": -14917.71651859636,
+          "return_pct": -0.18790279945598687
+        },
+        {
+          "month": "2026-09",
+          "starting_equity": 64472.88629193062,
+          "net_pnl": -3803.2621200690896,
+          "return_pct": -0.058990101712649845
+        }
+      ]
+    },
+    {
+      "stop_loss_pct": 0.02,
+      "portfolio_size": 3,
+      "final_equity": 59279.87081702702,
+      "net_pnl": -40720.12918297298,
+      "net_return_pct": -0.40720129182972986,
+      "trade_count": 157,
+      "execution_days": 65,
+      "no_trade_days": 37,
+      "win_rate": 0.28662420382165604,
+      "profit_factor": 0.4999603544715201,
+      "max_drawdown_pct": -0.45223123959421463,
+      "target_hit_rate": 0.2802547770700637,
+      "stop_hit_rate": 0.6878980891719745,
+      "average_trade_net_pct": -0.009012719063869844,
+      "average_win_pnl": 904.7482713508488,
+      "average_loss_pnl": -727.0875124442961,
+      "daily_2_5pct_attainment_on_trade_days": 0.0,
+      "monthly_30pct_target_hit": false,
+      "monthly_results": [
+        {
+          "month": "2026-04",
+          "starting_equity": 100000.0,
+          "net_pnl": 2356.7717937437583,
+          "return_pct": 0.023567717937437616
+        },
+        {
+          "month": "2026-05",
+          "starting_equity": 102356.77179374376,
+          "net_pnl": 3473.966157808214,
+          "return_pct": 0.03393977845265095
+        },
+        {
+          "month": "2026-06",
+          "starting_equity": 105830.73795155197,
+          "net_pnl": -3423.5599945417607,
+          "return_pct": -0.03234939168721496
+        },
+        {
+          "month": "2026-07",
+          "starting_equity": 102407.17795701021,
+          "net_pnl": -20847.611363031912,
+          "return_pct": -0.2035756846242125
+        },
+        {
+          "month": "2026-08",
+          "starting_equity": 81559.56659397829,
+          "net_pnl": -17056.779037395325,
+          "return_pct": -0.20913278171655536
+        },
+        {
+          "month": "2026-09",
+          "starting_equity": 64502.78755658297,
+          "net_pnl": -5222.916739555929,
+          "return_pct": -0.08097195388609046
+        }
+      ]
+    },
+    {
+      "stop_loss_pct": 0.02,
+      "portfolio_size": 5,
+      "final_equity": 59847.71256977732,
+      "net_pnl": -40152.28743022268,
+      "net_return_pct": -0.4015228743022268,
+      "trade_count": 205,
+      "execution_days": 65,
+      "no_trade_days": 37,
+      "win_rate": 0.3024390243902439,
+      "profit_factor": 0.5082362964160986,
+      "max_drawdown_pct": -0.44485586501597774,
+      "target_hit_rate": 0.2975609756097561,
+      "stop_hit_rate": 0.6682926829268293,
+      "average_trade_net_pct": -0.008754624478104246,
+      "average_win_pnl": 669.310762906897,
+      "average_loss_pnl": -570.9759072059463,
+      "daily_2_5pct_attainment_on_trade_days": 0.0,
+      "monthly_30pct_target_hit": false,
+      "monthly_results": [
+        {
+          "month": "2026-04",
+          "starting_equity": 100000.0,
+          "net_pnl": 2356.7717937437583,
+          "return_pct": 0.023567717937437616
+        },
+        {
+          "month": "2026-05",
+          "starting_equity": 102356.77179374376,
+          "net_pnl": 4382.734045950674,
+          "return_pct": 0.042818212895402885
+        },
+        {
+          "month": "2026-06",
+          "starting_equity": 106739.50583969444,
+          "net_pnl": -3433.0504791755757,
+          "return_pct": -0.03216288526135269
+        },
+        {
+          "month": "2026-07",
+          "starting_equity": 103306.45536051886,
+          "net_pnl": -21377.761690031402,
+          "return_pct": -0.2069353905854895
+        },
+        {
+          "month": "2026-08",
+          "starting_equity": 81928.69367048745,
+          "net_pnl": -16109.748727293047,
+          "return_pct": -0.19663133885773332
+        },
+        {
+          "month": "2026-09",
+          "starting_equity": 65818.94494319441,
+          "net_pnl": -5971.232373417122,
+          "return_pct": -0.09072209192308756
+        }
+      ]
+    },
+    {
+      "stop_loss_pct": 0.025,
+      "portfolio_size": 1,
+      "final_equity": 55869.63904491955,
+      "net_pnl": -44130.36095508045,
+      "net_return_pct": -0.4413036095508045,
+      "trade_count": 54,
+      "execution_days": 54,
+      "no_trade_days": 48,
+      "win_rate": 0.3148148148148148,
+      "profit_factor": 0.40807496593182424,
+      "max_drawdown_pct": -0.49104440686724127,
+      "target_hit_rate": 0.2962962962962963,
+      "stop_hit_rate": 0.6666666666666666,
+      "average_trade_net_pct": -0.010464876565235664,
+      "average_win_pnl": 1789.624033929848,
+      "average_loss_pnl": -2014.972149510484,
+      "daily_2_5pct_attainment_on_trade_days": 0.0,
+      "monthly_30pct_target_hit": false,
+      "monthly_results": [
+        {
+          "month": "2026-05",
+          "starting_equity": 100000.0,
+          "net_pnl": 9773.111443823374,
+          "return_pct": 0.09773111443823379
+        },
+        {
+          "month": "2026-06",
+          "starting_equity": 109773.11144382338,
+          "net_pnl": -2882.8266247138995,
+          "return_pct": -0.026261682727187652
+        },
+        {
+          "month": "2026-07",
+          "starting_equity": 106890.28481910948,
+          "net_pnl": -29436.585641200785,
+          "return_pct": -0.2753906558581666
+        },
+        {
+          "month": "2026-08",
+          "starting_equity": 77453.6991779087,
+          "net_pnl": -19173.306138663596,
+          "return_pct": -0.24754538959621697
+        },
+        {
+          "month": "2026-09",
+          "starting_equity": 58280.3930392451,
+          "net_pnl": -2410.753994325576,
+          "return_pct": -0.04136475182489263
+        }
+      ]
+    },
+    {
+      "stop_loss_pct": 0.025,
+      "portfolio_size": 3,
+      "final_equity": 55846.39097781519,
+      "net_pnl": -44153.60902218481,
+      "net_return_pct": -0.44153609022184814,
+      "trade_count": 124,
+      "execution_days": 54,
+      "no_trade_days": 48,
+      "win_rate": 0.3064516129032258,
+      "profit_factor": 0.4145762932710992,
+      "max_drawdown_pct": -0.4701822730468661,
+      "target_hit_rate": 0.29838709677419356,
+      "stop_hit_rate": 0.6612903225806451,
+      "average_trade_net_pct": -0.011321531711713843,
+      "average_win_pnl": 822.8426042701316,
+      "average_loss_pnl": -876.9956742377883,
+      "daily_2_5pct_attainment_on_trade_days": 0.0,
+      "monthly_30pct_target_hit": false,
+      "monthly_results": [
+        {
+          "month": "2026-05",
+          "starting_equity": 100000.0,
+          "net_pnl": 4299.949094583182,
+          "return_pct": 0.042999490945831775
+        },
+        {
+          "month": "2026-06",
+          "starting_equity": 104299.94909458318,
+          "net_pnl": -2741.2534892656217,
+          "return_pct": -0.026282404862726705
+        },
+        {
+          "month": "2026-07",
+          "starting_equity": 101558.69560531755,
+          "net_pnl": -19765.98976537489,
+          "return_pct": -0.1946262665896229
+        },
+        {
+          "month": "2026-08",
+          "starting_equity": 81792.70583994266,
+          "net_pnl": -20989.438561091876,
+          "return_pct": -0.2566174861871594
+        },
+        {
+          "month": "2026-09",
+          "starting_equity": 60803.267278850784,
+          "net_pnl": -4956.876301035579,
+          "return_pct": -0.0815231898362101
+        }
+      ]
+    },
+    {
+      "stop_loss_pct": 0.025,
+      "portfolio_size": 5,
+      "final_equity": 54997.937833124415,
+      "net_pnl": -45002.062166875585,
+      "net_return_pct": -0.4500206216687559,
+      "trade_count": 155,
+      "execution_days": 54,
+      "no_trade_days": 48,
+      "win_rate": 0.3032258064516129,
+      "profit_factor": 0.40381908027120883,
+      "max_drawdown_pct": -0.4782315938476476,
+      "target_hit_rate": 0.2967741935483871,
+      "stop_hit_rate": 0.6451612903225806,
+      "average_trade_net_pct": -0.011732594600823727,
+      "average_win_pnl": 648.5497853893086,
+      "average_loss_pnl": -698.9250192608624,
+      "daily_2_5pct_attainment_on_trade_days": 0.0,
+      "monthly_30pct_target_hit": false,
+      "monthly_results": [
+        {
+          "month": "2026-05",
+          "starting_equity": 100000.0,
+          "net_pnl": 5100.85925395388,
+          "return_pct": 0.05100859253953871
+        },
+        {
+          "month": "2026-06",
+          "starting_equity": 105100.85925395388,
+          "net_pnl": -2762.073068008022,
+          "return_pct": -0.026280213954617215
+        },
+        {
+          "month": "2026-07",
+          "starting_equity": 102338.78618594586,
+          "net_pnl": -20913.624792931496,
+          "return_pct": -0.20435677979346167
+        },
+        {
+          "month": "2026-08",
+          "starting_equity": 81425.16139301436,
+          "net_pnl": -20763.26005883187,
+          "return_pct": -0.25499808294654724
+        },
+        {
+          "month": "2026-09",
+          "starting_equity": 60661.90133418249,
+          "net_pnl": -5663.9635010581105,
+          "return_pct": -0.0933693698431195
+        }
+      ]
+    }
+  ],
+  "best_variant": {
+    "stop_loss_pct": 0.015,
+    "portfolio_size": 1,
+    "final_equity": 68435.26958932028,
+    "net_pnl": -31564.730410679724,
+    "net_return_pct": -0.3156473041067972,
+    "trade_count": 81,
+    "execution_days": 81,
+    "no_trade_days": 21,
+    "win_rate": 0.2962962962962963,
+    "profit_factor": 0.6138849823015218,
+    "max_drawdown_pct": -0.379311279206515,
+    "target_hit_rate": 0.2839506172839506,
+    "stop_hit_rate": 0.691358024691358,
+    "average_trade_net_pct": -0.004511488764278593,
+    "average_win_pnl": 2091.0343077102934,
+    "average_loss_pnl": -1434.2026981706456,
+    "daily_2_5pct_attainment_on_trade_days": 0.0,
+    "monthly_30pct_target_hit": false,
+    "monthly_results": [
+      {
+        "month": "2026-04",
+        "starting_equity": 100000.0,
+        "net_pnl": 4770.729306158331,
+        "return_pct": 0.04770729306158339
+      },
+      {
+        "month": "2026-05",
+        "starting_equity": 104770.72930615833,
+        "net_pnl": -4141.8858939672755,
+        "return_pct": -0.039532853511632715
+      },
+      {
+        "month": "2026-06",
+        "starting_equity": 100628.84341219105,
+        "net_pnl": 1817.9616985290045,
+        "return_pct": 0.018066010071112082
+      },
+      {
+        "month": "2026-07",
+        "starting_equity": 102446.80511072006,
+        "net_pnl": -22033.074996159066,
+        "return_pct": -0.2150684442755113
+      },
+      {
+        "month": "2026-08",
+        "starting_equity": 80413.730114561,
+        "net_pnl": -9900.728660837813,
+        "return_pct": -0.12312236538129495
+      },
+      {
+        "month": "2026-09",
+        "starting_equity": 70513.00145372318,
+        "net_pnl": -2077.731864402922,
+        "return_pct": -0.029465939919838813
+      }
+    ]
+  },
+  "costs": {
+    "brokerage_per_order": 20.0,
+    "exchange_turnover_rate": 3.45e-05,
+    "stt_sell_rate": 0.00025,
+    "sebi_turnover_rate": 1e-06,
+    "stamp_buy_rate": 3e-05,
+    "gst_rate": 0.18,
+    "slippage_per_side": 0.0005
+  }
+}
