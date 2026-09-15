@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
   actions: write
 
 jobs:
@@ -34,31 +34,6 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Publish Phase 6.2 running status
-        run: |
-          mkdir -p reports
-          python - <<'PY'
-          import json, os
-          from datetime import datetime, timezone
-          from pathlib import Path
-          p = Path('reports/phase62_status.json')
-          payload = {
-              'workflow': 'Surge Strategy Backtest Phase 6.2',
-              'phase': 'backtest',
-              'status': 'running',
-              'run_id': int(os.environ['GITHUB_RUN_ID']),
-              'run_attempt': int(os.environ['GITHUB_RUN_ATTEMPT']),
-              'commit': os.environ['GITHUB_SHA'],
-              'branch': os.environ['GITHUB_REF_NAME'],
-              'updated_at_utc': datetime.now(timezone.utc).isoformat(),
-          }
-          p.write_text(json.dumps(payload, indent=2) + '\n')
-          PY
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add reports/phase62_status.json
-          git diff --cached --quiet || git commit -m 'Phase 6.2: publish backtest running status'
-          git push
       - name: Validate code and config before data work
         run: python backtest/phase62_preflight.py --config-only
       - name: Restore persistent master dataset release
@@ -240,9 +215,9 @@ jobs:
               assert {'diagnostics','summaries','runtime_seconds'} <= set(x), f'Invalid {p}'
               print(p, 'OK')
           PY
-      - name: Publish Phase 6.2 completion status
+      - name: Write final status artifact
         run: |
-          mkdir -p reports
+          mkdir -p backtest/results/phase62/status
           python - <<'PY'
           import json, os
           from datetime import datetime, timezone
@@ -265,18 +240,13 @@ jobs:
               'max_shard_runtime_seconds': max(shard_runtime) if shard_runtime else 0.0,
               'updated_at_utc': datetime.now(timezone.utc).isoformat(),
           }
-          Path('reports/phase62_status.json').write_text(json.dumps(payload, indent=2) + '\n')
+          Path('backtest/results/phase62/status/final_status.json').write_text(json.dumps(payload, indent=2) + '\n')
           PY
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add reports/phase62_status.json
-          git commit -m 'Phase 6.2: publish backtest completion status'
-          git push
-      - name: Upload combined shard artifacts
+      - name: Upload combined Phase 6.2 results
         uses: actions/upload-artifact@v4
         with:
           name: surge-phase62-results
-          path: backtest/results/phase62/blocks/
+          path: backtest/results/phase62/
           if-no-files-found: error
 
   status:
@@ -284,14 +254,13 @@ jobs:
     needs: [prepare-data, backtest, aggregate]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Publish final Phase 6.2 status
-        env:
-          PREPARE_RESULT: ${{ needs.prepare-data.result }}
-          BACKTEST_RESULT: ${{ needs.backtest.result }}
-          AGGREGATE_RESULT: ${{ needs.aggregate.result }}
+      - name: Write final workflow status artifact
         run: |
-          mkdir -p reports
+          mkdir -p status
+          PREPARE_RESULT='${{ needs.prepare-data.result }}'
+          BACKTEST_RESULT='${{ needs.backtest.result }}'
+          AGGREGATE_RESULT='${{ needs.aggregate.result }}'
+          export PREPARE_RESULT BACKTEST_RESULT AGGREGATE_RESULT
           python - <<'PY'
           import json, os
           from datetime import datetime, timezone
@@ -313,10 +282,12 @@ jobs:
               'job_results': results,
               'updated_at_utc': datetime.now(timezone.utc).isoformat(),
           }
-          Path('reports/phase62_status.json').write_text(json.dumps(payload, indent=2) + '\n')
+          Path('status/phase62_status.json').write_text(json.dumps(payload, indent=2) + '\n')
+          print(json.dumps(payload, indent=2))
           PY
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add reports/phase62_status.json
-          git diff --cached --quiet || git commit -m 'Phase 6.2: publish final status'
-          git push
+      - name: Upload final workflow status
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase62-status
+          path: status/phase62_status.json
+          if-no-files-found: error
