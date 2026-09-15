@@ -124,16 +124,15 @@ def train_mfe_walk_forward(df: pd.DataFrame, validation_days: int = 60, seed: in
     for i, t in enumerate(TARGETS):
         actual = (yva >= t).astype(int)
         raw = raw_probs[:, i]
+        cal = IsotonicRegression(y_min=0.0, y_max=1.0, out_of_bounds="clip")
         if actual.sum() == 0 or actual.sum() == len(actual):
-            cal = IsotonicRegression(y_min=0.0, y_max=1.0, out_of_bounds="clip")
-            # Degenerate validation: preserve the empirical rate rather than fitting an unstable curve.
-            cal.fit([0.0, 1.0], [float(actual.mean()), float(actual.mean())])
+            rate = float(actual.mean())
+            cal.fit([0.0, 1.0], [rate, rate])
         else:
-            cal = IsotonicRegression(y_min=0.0, y_max=1.0, out_of_bounds="clip")
             cal.fit(raw, actual)
         calibrated = np.asarray(cal.predict(raw), dtype=float)
         calibration[str(t)] = cal
-        hit_rate[str(t)] = float((calibrated >= 0.5).eq(actual).mean() if isinstance(pd.Series(calibrated), pd.Series) else np.mean((calibrated >= 0.5) == actual))
+        hit_rate[str(t)] = float(np.mean((calibrated >= 0.5) == actual))
         brier[str(t)] = {"raw": _brier(actual, raw), "calibrated": _brier(actual, calibrated), "base_rate": float(actual.mean())}
 
     return MFEModelBundle(model, scaler, mae, ric, hit_rate, calibration, brier)
@@ -152,7 +151,8 @@ def _score(bundle: MFEModelBundle, latest: pd.DataFrame, calibrated: bool) -> pd
         p = probs[:, i]
         if calibrated:
             p = np.asarray(bundle.calibration[str(t)].predict(p), dtype=float)
-        work[f"p_hit_{str(t).rstrip('0').rstrip('.').replace('.', '_')}" if t == 0.025 else f"p_hit_{int(t*100)}"] = np.clip(p, 0.0, 1.0)
+        key = f"p_hit_{str(t).rstrip('0').rstrip('.').replace('.', '_')}" if t == 0.025 else f"p_hit_{int(t*100)}"
+        work[key] = np.clip(p, 0.0, 1.0)
     return work
 
 
