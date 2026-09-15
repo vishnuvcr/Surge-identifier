@@ -1,0 +1,66 @@
+name: NSE Surge Daily
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 18:00 IST = 12:30 UTC on NSE weekdays.
+    - cron: "30 12 * * 1-5"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: nse-surge-production
+  cancel-in-progress: false
+
+jobs:
+  run-and-publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Restore NSE data cache
+        uses: actions/cache@v4
+        with:
+          path: data/cache
+          key: nse-surge-data-${{ github.run_id }}
+          restore-keys: |
+            nse-surge-data-
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Run model and generate report
+        run: python scripts/run_daily.py
+
+      - name: Commit daily report
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add reports site
+          git diff --cached --quiet || git commit -m "Update NSE surge report"
+          git push
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
