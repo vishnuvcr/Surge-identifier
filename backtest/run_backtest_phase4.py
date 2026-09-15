@@ -87,13 +87,11 @@ def regime_score(scored):
 def choose_signal(scored, cfg):
     rscore, rlabel = regime_score(scored)
     x = scored.copy()
-    # The highest achievable target is selected only when the model supports it.
     rules = [
         (0.05, "p_hit_5", cfg["p_hit_5"], cfg["mfe_min_5"], 0.72),
         (0.04, "p_hit_4", cfg["p_hit_4"], cfg["mfe_min_4"], 0.64),
         (0.03, "p_hit_3", cfg["p_hit_3"], cfg["mfe_min_3"], 0.56),
     ]
-    # Risk-off days require stronger evidence; neutral/risk-on use the configured base gates.
     risk_multiplier = cfg["risk_off_probability_multiplier"] if rlabel == "risk_off" else 1.0
     x["mfe_score"] = x["predicted_mfe"] * (0.60 + 0.40 * x["surge_probability"])
     x["regime_score"] = rscore
@@ -103,7 +101,6 @@ def choose_signal(scored, cfg):
         for target, pcol, pmin, mfemin, surge_min in rules:
             surge_gate = max(surge_min, float(row.threshold_used)) * risk_multiplier
             if float(row[pcol]) >= pmin * risk_multiplier and float(row.predicted_mfe) >= mfemin and float(row.surge_probability) >= surge_gate:
-                # Require positive distance from estimated costs before entering.
                 expected_edge = float(row[pcol]) * target - cfg["estimated_cost_hurdle_pct"]
                 if expected_edge > 0:
                     picks.append((expected_edge + 0.25 * float(row[pcol]) + 0.20 * float(row.regime_score), target, row.copy()))
@@ -116,6 +113,17 @@ def choose_signal(scored, cfg):
     row["selection_score"] = edge
     row["selection_type"] = "mfe_gated"
     return row
+
+
+def _metric_value(obj, name, default=0.0):
+    value = getattr(obj, name, default)
+    if isinstance(value, (pd.Series, pd.DataFrame, np.ndarray, list, tuple)):
+        arr = np.asarray(value, dtype=float).reshape(-1)
+        return float(arr[-1]) if arr.size else float(default)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
 
 
 def main():
@@ -188,9 +196,9 @@ def main():
                       "p_hit_3": float(pick.p_hit_3), "p_hit_4": float(pick.p_hit_4), "p_hit_5": float(pick.p_hit_5),
                       "target_pct": float(pick.target_pct), "selection_score": float(pick.selection_score),
                       "regime": str(pick.regime), "regime_score": float(pick.regime_score),
-                      "validation_precision": float(pick.validation_precision),
-                      "mfe_validation_mae": float(mfe_bundle.validation_mae),
-                      "mfe_validation_rank_ic": float(mfe_bundle.validation_rank_ic)})
+                      "validation_precision": _metric_value(surge_bundle, "validation_precision"),
+                      "mfe_validation_mae": _metric_value(mfe_bundle, "validation_mae"),
+                      "mfe_validation_rank_ic": _metric_value(mfe_bundle, "validation_rank_ic")})
         trades.append(trade)
         capital += trade["net_pnl"]
         daily.append({"signal_date": signal_day, "entry_date": entry_day, "executed": 1,
@@ -224,6 +232,7 @@ def main():
         "no_trade_days": int((daily.executed == 0).sum()),
         "target_distribution": trades.target_pct.value_counts().sort_index().to_dict(),
         "mean_target_pct": float(trades.target_pct.mean()),
+        "daily_target_hit_rate": {str(t): float(((trades.target_pct == t) & (trades.exit_reason == "take_profit")).mean()) for t in sorted(trades.target_pct.unique())},
         "monthly_results": monthly_rows,
         "objective": {"daily_target_min_pct": 0.03, "daily_target_max_pct": 0.05, "monthly_target_pct": 0.30},
         "warning": "The requested 3-5% daily and 30% monthly targets are research objectives, not guaranteed outcomes; the backtest must prove them out-of-sample.",
