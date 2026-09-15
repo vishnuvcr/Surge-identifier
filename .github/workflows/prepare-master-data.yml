@@ -1,6 +1,7 @@
 name: Prepare Persistent NSE Master Data
 
 # Bootstrap/refresh the persistent Phase 6.2 dataset before dispatching the backtest.
+# Direct-execution import path fix is present in scripts/refresh_master_dataset.py.
 on:
   workflow_dispatch:
     inputs:
