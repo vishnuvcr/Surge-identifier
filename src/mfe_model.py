@@ -6,13 +6,14 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 import torch
+from sklearn.isotonic import IsotonicRegression
 from sklearn.preprocessing import StandardScaler
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from src.surge_model import FEATURES
 
-TARGETS = (0.03, 0.04, 0.05)
+TARGETS = (0.025, 0.03, 0.04, 0.05)
 
 
 class MFENet(nn.Module):
@@ -38,12 +39,18 @@ class MFEModelBundle:
     validation_mae: float
     validation_rank_ic: float
     validation_hit_rate: dict
+    calibration: dict
+    validation_brier: dict
 
 
 def _rank_ic(y, p):
     if len(y) < 3 or np.std(y) == 0 or np.std(p) == 0:
         return 0.0
     return float(pd.Series(y).corr(pd.Series(p), method="spearman"))
+
+
+def _brier(actual, pred):
+    return float(np.mean((np.asarray(pred) - np.asarray(actual)) ** 2))
 
 
 def train_mfe_walk_forward(df: pd.DataFrame, validation_days: int = 60, seed: int = 42) -> MFEModelBundle:
@@ -107,18 +114,32 @@ def train_mfe_walk_forward(df: pd.DataFrame, validation_days: int = 60, seed: in
     with torch.no_grad():
         pm, ph = model(torch.tensor(Xva, dtype=torch.float32))
         pred_mfe = pm.numpy()
-        pred_hit = torch.sigmoid(ph).numpy()
+        raw_probs = torch.sigmoid(ph).numpy()
+
     mae = float(np.mean(np.abs(pred_mfe - yva)))
     ric = _rank_ic(yva, pred_mfe)
     hit_rate = {}
+    calibration = {}
+    brier = {}
     for i, t in enumerate(TARGETS):
-        actual = yva >= t
-        pred = pred_hit[:, i] >= 0.5
-        hit_rate[str(t)] = float((pred == actual).mean())
-    return MFEModelBundle(model, scaler, mae, ric, hit_rate)
+        actual = (yva >= t).astype(int)
+        raw = raw_probs[:, i]
+        if actual.sum() == 0 or actual.sum() == len(actual):
+            cal = IsotonicRegression(y_min=0.0, y_max=1.0, out_of_bounds="clip")
+            # Degenerate validation: preserve the empirical rate rather than fitting an unstable curve.
+            cal.fit([0.0, 1.0], [float(actual.mean()), float(actual.mean())])
+        else:
+            cal = IsotonicRegression(y_min=0.0, y_max=1.0, out_of_bounds="clip")
+            cal.fit(raw, actual)
+        calibrated = np.asarray(cal.predict(raw), dtype=float)
+        calibration[str(t)] = cal
+        hit_rate[str(t)] = float((calibrated >= 0.5).eq(actual).mean() if isinstance(pd.Series(calibrated), pd.Series) else np.mean((calibrated >= 0.5) == actual))
+        brier[str(t)] = {"raw": _brier(actual, raw), "calibrated": _brier(actual, calibrated), "base_rate": float(actual.mean())}
+
+    return MFEModelBundle(model, scaler, mae, ric, hit_rate, calibration, brier)
 
 
-def score_mfe(bundle: MFEModelBundle, latest: pd.DataFrame) -> pd.DataFrame:
+def _score(bundle: MFEModelBundle, latest: pd.DataFrame, calibrated: bool) -> pd.DataFrame:
     work = latest.dropna(subset=FEATURES).copy()
     X = bundle.scaler.transform(work[FEATURES].astype(float))
     bundle.model.eval()
@@ -128,5 +149,16 @@ def score_mfe(bundle: MFEModelBundle, latest: pd.DataFrame) -> pd.DataFrame:
         probs = torch.sigmoid(ph).numpy()
     work["predicted_mfe"] = np.clip(mfe, -0.20, 0.30)
     for i, t in enumerate(TARGETS):
-        work[f"p_hit_{int(t*100)}"] = probs[:, i]
+        p = probs[:, i]
+        if calibrated:
+            p = np.asarray(bundle.calibration[str(t)].predict(p), dtype=float)
+        work[f"p_hit_{str(t).rstrip('0').rstrip('.').replace('.', '_')}" if t == 0.025 else f"p_hit_{int(t*100)}"] = np.clip(p, 0.0, 1.0)
     return work
+
+
+def score_mfe(bundle: MFEModelBundle, latest: pd.DataFrame) -> pd.DataFrame:
+    return _score(bundle, latest, calibrated=False)
+
+
+def score_mfe_calibrated(bundle: MFEModelBundle, latest: pd.DataFrame) -> pd.DataFrame:
+    return _score(bundle, latest, calibrated=True)
