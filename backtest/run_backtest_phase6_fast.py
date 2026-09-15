@@ -1,5 +1,15 @@
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# When a file inside backtest/ is executed directly, Python puts backtest/
+# on sys.path rather than the repository root. Add the root explicitly so the
+# package imports below are reliable in GitHub Actions and local execution.
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 import backtest.run_backtest_phase6 as baseline
 from src.moe_engine_fast import train_experts
 
