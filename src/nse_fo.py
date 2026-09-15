@@ -63,11 +63,21 @@ def load_fo(cache_dir: str, lookback_days: int = 420) -> pd.DataFrame:
     dates = [end - timedelta(days=i) for i in range(lookback_days, -1, -1) if (end - timedelta(days=i)).weekday() < 5]
     frames = []
     existing = set()
+
+    # The production pipeline may have left an older fo.parquet whose schema
+    # predates the normalized instrument/option columns used by this parser.
+    # Never trust that stale cache silently: rebuild it from the raw daily zips.
     if parquet.exists():
-        old = pd.read_parquet(parquet)
-        if not old.empty:
-            frames.append(old)
-            existing = set(pd.to_datetime(old["date"]).dt.date.unique())
+        try:
+            old = pd.read_parquet(parquet)
+            required = {"date", "symbol", "instrument", "option_type", "oi", "oi_change", "volume"}
+            if not old.empty and required.issubset(old.columns):
+                frames.append(old)
+                existing = set(pd.to_datetime(old["date"]).dt.date.unique())
+            else:
+                parquet.unlink(missing_ok=True)
+        except Exception:
+            parquet.unlink(missing_ok=True)
 
     needed = [d for d in dates if d not in existing]
     with ThreadPoolExecutor(max_workers=8) as ex:
@@ -76,10 +86,16 @@ def load_fo(cache_dir: str, lookback_days: int = 420) -> pd.DataFrame:
             x = fut.result()
             if x is not None and not x.empty:
                 frames.append(x)
+
     if not frames:
         return pd.DataFrame(columns=["date", "symbol", "fut_oi", "fut_oi_change", "fut_volume", "call_oi", "put_oi", "pcr"])
 
     raw = pd.concat(frames, ignore_index=True)
+    for col in ["instrument", "option_type", "symbol"]:
+        if col not in raw.columns:
+            raw[col] = ""
+        raw[col] = raw[col].astype(str).str.upper()
+
     fut = raw[raw["instrument"].str.contains("FUT", na=False)].groupby(["date", "symbol"]).agg(
         fut_oi=("oi", "sum"), fut_oi_change=("oi_change", "sum"), fut_volume=("volume", "sum")
     )
