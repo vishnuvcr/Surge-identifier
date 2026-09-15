@@ -1,65 +1,135 @@
-"""Phase 6.2 block launcher.
-
-Runs the full Phase 6.1 research engine with the Phase 6.2 configuration and
-an isolated OOS calendar block. Parallelism is orchestration only: features,
-labels, models, costs and execution rules remain unchanged.
-"""
 from __future__ import annotations
 
+import json
 import os
-import shutil
+import sys
+import time
 from pathlib import Path
 
+import pandas as pd
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-CFG62 = ROOT / "backtest" / "config_phase62.yaml"
-CFG61 = ROOT / "backtest" / "config_phase61.yaml"
-PHASE61_OUT = ROOT / "backtest" / "results" / "phase61"
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from backtest.run_backtest_phase61 import execute, load_events, liquidity_table, summary
+from src.moe_engine import add_point_in_time_events
+from src.moe_engine_phase61 import add_targets, route_and_rank, score_experts_phase61, train_experts_phase61, train_router
+from src.nse_data import load_prices
+from src.nse_fo import load_fo
+from src.surge_model import build_features
 
 
 def main() -> None:
+    started = time.perf_counter()
+    cfg = yaml.safe_load((ROOT / "backtest/config_phase62.yaml").read_text())
     start = os.environ.get("PHASE62_BLOCK_START")
     end = os.environ.get("PHASE62_BLOCK_END")
-    output_dir = Path(os.environ.get("PHASE62_OUTPUT_DIR", str(ROOT / "backtest" / "results" / "phase62")))
-    output_dir.mkdir(parents=True, exist_ok=True)
+    out = Path(os.environ.get("PHASE62_OUTPUT_DIR", ROOT / "backtest/results/phase62/block"))
+    out.mkdir(parents=True, exist_ok=True)
+    print(f"Phase 6.2 block start={start} end={end}", flush=True)
 
-    cfg = yaml.safe_load(CFG62.read_text(encoding="utf-8"))
-    if start:
-        cfg["backtest_start"] = start
-    if end:
-        cfg["backtest_end"] = end
-
-    # The proven Phase 6.1 engine is reused unchanged. We temporarily provide
-    # it with the Phase 6.2 config; each matrix runner is an isolated VM.
-    original_cfg = CFG61.read_text(encoding="utf-8") if CFG61.exists() else None
-    shutil.copy2(CFG62, CFG61)
-    if original_cfg is not None:
-        phase_cfg = yaml.safe_load(original_cfg)
+    prices = load_prices("data/cache", int(cfg["lookback_days"]))
+    prices.date = pd.to_datetime(prices.date).dt.normalize()
+    fo = load_fo("data/cache", int(cfg["lookback_days"]))
+    if not fo.empty:
+        fo.date = pd.to_datetime(fo.date).dt.normalize()
+        data = prices.merge(fo, on=["date", "symbol"], how="left")
     else:
-        phase_cfg = None
-    try:
-        CFG61.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
-        # Remove stale output from any prior invocation in this VM.
-        if PHASE61_OUT.exists():
-            shutil.rmtree(PHASE61_OUT)
-        from backtest import run_backtest_phase61 as engine
-        print(f"Phase 6.2 block start={start!r} end={end!r} output={output_dir}", flush=True)
-        engine.main()
-        PHASE61_OUT.mkdir(parents=True, exist_ok=True)
-        for item in PHASE61_OUT.iterdir():
-            target = output_dir / item.name
-            if target.exists():
-                if target.is_dir():
-                    shutil.rmtree(target)
-                else:
-                    target.unlink()
-            shutil.move(str(item), str(target))
-    finally:
-        if phase_cfg is not None:
-            CFG61.write_text(original_cfg, encoding="utf-8")
-        else:
-            CFG61.unlink(missing_ok=True)
+        data = prices
+    print(f"Loaded prices={len(prices):,} rows, f&o={len(fo):,} rows", flush=True)
+
+    feat = build_features(data)
+    news, corp = load_events(cfg)
+    feat = add_point_in_time_events(feat, news, corp)
+    feat = add_targets(feat, float(cfg["stop_loss_pct"]), tuple(cfg["target_levels"]))
+    feat.date = pd.to_datetime(feat.date).dt.normalize()
+    days = pd.DatetimeIndex(sorted(feat.date.unique()))
+    eval_days = days[int(cfg["min_train_days"]):]
+    if start:
+        eval_days = eval_days[eval_days >= pd.Timestamp(start)]
+    if end:
+        eval_days = eval_days[eval_days < pd.Timestamp(end)]
+    next_day = dict(zip(days[:-1], days[1:]))
+    prices_idx = prices.set_index(["date", "symbol"]).sort_index()
+    eligible_set = liquidity_table(prices, int(cfg["liquidity_lookback_sessions"]), float(cfg["min_avg_turnover_cr"]))
+
+    sizes = [int(x) for x in cfg["portfolio_sizes"]]
+    states = {ps: {"capital": float(cfg["initial_capital"]), "trades": [], "daily": []} for ps in sizes}
+    last_period = None
+    bundles = {}
+    router = None
+    diagnostics = {"signal_days": 0, "candidate_rows": 0, "qualified_rows": 0, "trade_days": 0, "no_trade_days": 0, "expert_refits": []}
+
+    for i, signal_day in enumerate(eval_days, 1):
+        diagnostics["signal_days"] += 1
+        period = pd.Timestamp(signal_day).to_period("M")
+        if period != last_period:
+            prior = feat[(feat.date < signal_day) & feat.label_date.notna() & (feat.label_date < signal_day)].copy()
+            train_days = sorted(prior.date.unique())[-int(cfg["training_lookback_sessions"]):]
+            prior = prior[prior.date.isin(train_days)].copy()
+            if len(train_days) >= int(cfg["min_train_days"]):
+                bundles = train_experts_phase61(prior, tuple(cfg["target_levels"]), float(cfg["stop_loss_pct"]), int(cfg["seed"]), int(cfg["min_positive_labels"]))
+                router = train_router(prior, tuple(cfg["target_levels"]), float(cfg["stop_loss_pct"]), int(cfg["seed"])) if bundles else None
+            else:
+                bundles, router = {}, None
+            diagnostics["expert_refits"].append({"period": str(period), "train_days": len(train_days), "experts": sorted(bundles), "router": router is not None})
+            print(f"Refit {period}: train_days={len(train_days)} experts={len(bundles)} router={router is not None}", flush=True)
+            last_period = period
+
+        daily_picks = None
+        if bundles:
+            symbols = {s for d, s in eligible_set if d == signal_day}
+            universe = feat[(feat.date == signal_day) & feat.symbol.isin(symbols)].copy()
+            diagnostics["candidate_rows"] += len(universe)
+            if not universe.empty:
+                scored = score_experts_phase61(bundles, universe, tuple(cfg["target_levels"]))
+                picks = route_and_rank(scored, router, cfg)
+                diagnostics["qualified_rows"] += len(picks)
+                entry_day = next_day.get(signal_day)
+                if entry_day is not None:
+                    entry_symbols = prices_idx.loc[entry_day].index if entry_day in prices_idx.index.get_level_values(0) else pd.Index([])
+                    daily_picks = picks[picks.symbol.isin(entry_symbols)].copy()
+
+        if daily_picks is None or daily_picks.empty:
+            diagnostics["no_trade_days"] += 1
+            for ps in sizes:
+                st = states[ps]
+                st["daily"].append({"signal_date": signal_day, "entry_date": next_day.get(signal_day), "executed": 0, "starting_equity": st["capital"], "ending_equity": st["capital"], "daily_pnl": 0.0, "daily_return_pct": 0.0, "selected_count": 0})
+            continue
+
+        diagnostics["trade_days"] += 1
+        entry_day = next_day[signal_day]
+        for ps in sizes:
+            st = states[ps]
+            chosen = daily_picks.head(min(ps, int(cfg["max_candidates_per_day"]))).copy()
+            start_equity = st["capital"]
+            allocation = start_equity / max(len(chosen), 1)
+            pnl = 0.0
+            for _, pick in chosen.iterrows():
+                row = prices_idx.loc[(entry_day, pick.symbol)]
+                result = execute(row, allocation, cfg["costs"], float(pick.target), float(cfg["stop_loss_pct"]))
+                result.update(pick.to_dict())
+                result.update({"signal_date": signal_day, "entry_date": entry_day, "portfolio_size": ps})
+                st["trades"].append(result)
+                pnl += result["net_pnl"]
+            st["capital"] += pnl
+            st["daily"].append({"signal_date": signal_day, "entry_date": entry_day, "executed": 1, "starting_equity": start_equity, "ending_equity": st["capital"], "daily_pnl": pnl, "daily_return_pct": pnl / max(start_equity, 1.0), "selected_count": len(chosen)})
+
+        if i == 1 or i % 25 == 0 or i == len(eval_days):
+            print(f"Progress {i}/{len(eval_days)} elapsed={time.perf_counter()-started:.1f}s", flush=True)
+
+    summaries = {str(ps): summary(states[ps], cfg) for ps in sizes}
+    result = {"phase": "6.2", "block_start": start, "block_end": end, "engine": "full_information_tail_moe_oof_router", "config": cfg, "diagnostics": diagnostics, "summaries": summaries, "runtime_seconds": time.perf_counter() - started}
+    (out / "summary.json").write_text(json.dumps(result, indent=2, default=str))
+    for ps in sizes:
+        trades = pd.DataFrame(states[ps]["trades"])
+        daily = pd.DataFrame(states[ps]["daily"])
+        if not trades.empty:
+            trades.to_csv(out / f"trades_p{ps}.csv", index=False)
+        daily.to_csv(out / f"daily_p{ps}.csv", index=False)
+    print(json.dumps(result, indent=2, default=str), flush=True)
 
 
 if __name__ == "__main__":
