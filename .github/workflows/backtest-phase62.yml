@@ -27,6 +27,19 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: pip install -r requirements.txt
+      - name: Validate Phase 6.2 code/config before downloading data
+        env:
+          PHASE62_BLOCK_START: '2023-01-01'
+          PHASE62_BLOCK_END: '2023-07-01'
+        run: python backtest/phase62_preflight.py
+      - name: Smoke-test engine imports and callable
+        run: |
+          python - <<'PY'
+          import inspect
+          from backtest import run_backtest_phase61 as engine
+          assert callable(getattr(engine, 'main', None)), 'run_backtest_phase61.main is missing'
+          print('engine.main: OK')
+          PY
       - name: Download full Phase 6.2 data once
         run: |
           python - <<'PY'
@@ -38,13 +51,16 @@ jobs:
           print(f'Preparing {lookback} calendar days of cash + F&O data', flush=True)
           prices = load_prices('data/cache', lookback)
           fo = load_fo('data/cache', lookback)
+          assert len(prices) > 1000, f'Cash data unexpectedly small: {len(prices)} rows'
+          assert not prices.empty and {'date','symbol','open','high','low','close','volume'}.issubset(prices.columns)
+          assert not fo.empty and {'date','symbol','fut_oi','fut_oi_change','fut_volume','call_oi','put_oi','pcr'}.issubset(fo.columns)
           print(f'Prepared prices={len(prices):,} F&O={len(fo):,}', flush=True)
           PY
       - name: Cache prepared data for all shards
         uses: actions/cache@v4
         with:
           path: data/cache
-          key: phase62-data-v1-${{ runner.os }}-${{ hashFiles('backtest/config_phase62.yaml', 'src/nse_data.py', 'src/nse_fo.py') }}
+          key: phase62-data-v2-${{ runner.os }}-${{ hashFiles('backtest/config_phase62.yaml', 'src/nse_data.py', 'src/nse_fo.py') }}
 
   backtest:
     needs: prepare-data
@@ -81,13 +97,45 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: data/cache
-          key: phase62-data-v1-${{ runner.os }}-${{ hashFiles('backtest/config_phase62.yaml', 'src/nse_data.py', 'src/nse_fo.py') }}
+          key: phase62-data-v2-${{ runner.os }}-${{ hashFiles('backtest/config_phase62.yaml', 'src/nse_data.py', 'src/nse_fo.py') }}
+      - name: Validate restored cache and shard configuration
+        env:
+          PHASE62_BLOCK_START: ${{ matrix.start }}
+          PHASE62_BLOCK_END: ${{ matrix.end }}
+        run: |
+          python backtest/phase62_preflight.py
+          python - <<'PY'
+          from pathlib import Path
+          import pandas as pd
+          p = Path('data/cache/prices.parquet')
+          f = Path('data/cache/fo.parquet')
+          assert p.exists(), 'prices.parquet missing after cache restore'
+          assert f.exists(), 'fo.parquet missing after cache restore'
+          px = pd.read_parquet(p, columns=['date','symbol'])
+          fo = pd.read_parquet(f, columns=['date','symbol'])
+          assert px['date'].nunique() >= 1000, f'Insufficient cached cash history: {px.date.nunique()} dates'
+          assert fo['date'].nunique() >= 500, f'Insufficient cached F&O history: {fo.date.nunique()} dates'
+          print(f'cache preflight OK: cash_dates={px.date.nunique()} fo_dates={fo.date.nunique()}')
+          PY
       - name: Run Phase 6.2 shard
         env:
           PHASE62_BLOCK_START: ${{ matrix.start }}
           PHASE62_BLOCK_END: ${{ matrix.end }}
           PHASE62_OUTPUT_DIR: backtest/results/phase62/${{ matrix.start }}_${{ matrix.end }}
         run: python backtest/run_backtest_phase62.py
+      - name: Validate shard outputs
+        run: |
+          test -s "backtest/results/phase62/${{ matrix.start }}_${{ matrix.end }}/summary.json"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ['PHASE62_OUTPUT_DIR'])
+          data = json.loads((root / 'summary.json').read_text())
+          required = {'diagnostics','summaries','runtime_seconds'}
+          missing = required - set(data)
+          assert not missing, f'Missing result fields: {missing}'
+          print('shard result schema: OK')
+          PY
       - name: Upload shard results
         uses: actions/upload-artifact@v4
         with:
@@ -110,17 +158,21 @@ jobs:
           pattern: phase62-*
           path: backtest/results/phase62/blocks
           merge-multiple: false
-      - name: Validate shard outputs
+      - name: Validate all seven shards before aggregation
         run: |
           python - <<'PY'
           from pathlib import Path
+          import json
           root = Path('backtest/results/phase62/blocks')
-          files = sorted(root.rglob('*')) if root.exists() else []
-          print(f'Found {len(files)} result files/directories')
-          for f in files:
-              if f.is_file():
-                  print(f'{f} {f.stat().st_size} bytes')
-          print('Chronological aggregation is intentionally deferred until every shard passes schema and leakage validation.')
+          summaries = sorted(root.rglob('summary.json'))
+          expected = 7
+          print(f'Found {len(summaries)} shard summaries')
+          assert len(summaries) == expected, f'Expected {expected} shard summaries, found {len(summaries)}'
+          for f in summaries:
+              d=json.loads(f.read_text())
+              assert 'diagnostics' in d and 'summaries' in d
+              print(f'OK {f}: phase={d.get("phase")} runtime={d.get("runtime_seconds")}s')
+          print('All shards passed schema validation; no silent partial aggregation.')
           PY
       - name: Upload combined shard artifacts
         uses: actions/upload-artifact@v4
