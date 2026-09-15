@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import importlib
 import os
 from pathlib import Path
@@ -10,9 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-REQUIRED = [
-    'numpy', 'pandas', 'pyarrow', 'yaml', 'sklearn', 'torch', 'requests'
-]
+REQUIRED = ['numpy', 'pandas', 'pyarrow', 'yaml', 'sklearn', 'torch', 'requests']
 
 
 def check_imports():
@@ -44,16 +43,20 @@ def check_files():
 
 def check_config():
     cfg = yaml.safe_load((ROOT / 'backtest/config_phase62.yaml').read_text())
-    required = ['initial_capital','lookback_days','training_lookback_sessions','portfolio_sizes','target_levels','stop_loss_pct','costs']
+    required = ['initial_capital','lookback_days','training_lookback_sessions','min_train_days','portfolio_sizes','target_levels','stop_loss_pct','costs']
     missing = [x for x in required if x not in cfg]
     if missing:
         raise RuntimeError('Phase 6.2 config missing keys: ' + ', '.join(missing))
-    if int(cfg['lookback_days']) <= int(cfg['training_lookback_sessions']):
-        raise RuntimeError('lookback_days must exceed training_lookback_sessions')
+    if int(cfg['lookback_days']) <= int(cfg['min_train_days']):
+        raise RuntimeError('lookback_days must exceed min_train_days')
+    if int(cfg['training_lookback_sessions']) < int(cfg['min_train_days']):
+        raise RuntimeError('training_lookback_sessions must be >= min_train_days')
     if not cfg['target_levels']:
         raise RuntimeError('No target levels configured')
     if float(cfg['stop_loss_pct']) <= 0:
         raise RuntimeError('Invalid stop loss')
+    if not cfg.get('portfolio_sizes'):
+        raise RuntimeError('No portfolio sizes configured')
 
 
 def check_block():
@@ -66,11 +69,15 @@ def check_block():
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config-only', action='store_true', help='Skip block-environment validation')
+    args = parser.parse_args()
     print('=== Phase 6.2 PRE-FLIGHT ===', flush=True)
     check_imports(); print('imports: OK', flush=True)
     check_files(); print('files: OK', flush=True)
     check_config(); print('config: OK', flush=True)
-    check_block(); print('block: OK', flush=True)
+    if not args.config_only:
+        check_block(); print('block: OK', flush=True)
     print('PRE-FLIGHT PASSED', flush=True)
 
 
