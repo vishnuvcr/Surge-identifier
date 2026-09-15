@@ -5,6 +5,12 @@ on:
     branches: [backtest-paytm-intraday]
     paths-ignore:
       - 'backtest/results/phase5/**'
+      - 'src/moe_engine.py'
+      - 'backtest/run_backtest_phase6.py'
+      - 'backtest/config_phase6.yaml'
+      - 'backtest/results/phase6/**'
+      - 'data/events/**'
+      - '.github/workflows/backtest-phase6.yml'
   workflow_dispatch:
 
 permissions:
