@@ -1,0 +1,61 @@
+name: Surge Strategy Backtest Phase 3
+
+on:
+  push:
+    branches: [backtest-paytm-intraday]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: backtest-paytm-intraday
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: phase3-pip-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            phase3-pip-${{ runner.os }}-${{ env.PYTHON_VERSION }}-
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -r requirements.txt
+
+      - name: Run Phase 3 backtest
+        run: python backtest/run_backtest_phase3.py
+
+      - name: Commit Phase 3 results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backtest/results/phase3
+          if git diff --cached --quiet; then
+            echo "No Phase 3 result changes to commit"
+            exit 0
+          fi
+          git commit -m "Update Phase 3 backtest results"
+          git push origin HEAD:backtest-paytm-intraday
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: surge-backtest-phase3-results
+          path: backtest/results/phase3
+          retention-days: 30
