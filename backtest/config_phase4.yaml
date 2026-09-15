@@ -1,0 +1,30 @@
+initial_capital: 100000
+lookback_days: 420
+training_lookback_sessions: 300
+min_train_days: 120
+validation_days: 60
+liquidity_lookback_sessions: 60
+min_avg_turnover_cr: 5
+min_candidate_probability: 0.58
+seed: 42
+backtest_start: null
+backtest_end: null
+p_hit_3: 0.62
+p_hit_4: 0.55
+p_hit_5: 0.45
+mfe_min_3: 0.032
+mfe_min_4: 0.042
+mfe_min_5: 0.052
+risk_off_probability_multiplier: 1.15
+estimated_cost_hurdle_pct: 0.006
+costs:
+  brokerage_per_order: 20.0
+  exchange_turnover_rate: 0.0000345
+  stt_sell_rate: 0.00025
+  sebi_turnover_rate: 0.000001
+  stamp_buy_rate: 0.00003
+  gst_rate: 0.18
+  slippage_per_side: 0.0005
+objective_daily_min_pct: 0.03
+objective_daily_max_pct: 0.05
+objective_monthly_pct: 0.30
