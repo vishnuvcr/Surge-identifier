@@ -1,0 +1,9 @@
+lookback_days: 420
+min_history_days: 120
+max_stocks: 2200
+min_avg_turnover_cr: 5
+max_candidates: 5
+min_candidate_probability: 0.58
+surge_threshold: 0.03
+validation_days: 60
+seed: 42
