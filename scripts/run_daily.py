@@ -1,8 +1,16 @@
 from __future__ import annotations
 
 import json
+import sys
 from datetime import datetime
 from pathlib import Path
+
+# When executed as `python scripts/run_daily.py`, Python puts `scripts/` on
+# sys.path rather than the repository root. Add the project root explicitly so
+# the `src` package is importable in GitHub Actions and local runs alike.
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 import pandas as pd
 import yaml
@@ -10,8 +18,6 @@ import yaml
 from src.nse_data import IST, load_prices
 from src.nse_fo import load_fo
 from src.surge_model import build_features, score_latest, train_walk_forward
-
-ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
