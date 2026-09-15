@@ -1,0 +1,60 @@
+name: Surge Strategy Backtest Phase 6
+
+on:
+  push:
+    branches: [backtest-paytm-intraday]
+    paths:
+      - 'src/moe_engine.py'
+      - 'backtest/run_backtest_phase6.py'
+      - 'backtest/config_phase6.yaml'
+      - '.github/workflows/backtest-phase6.yml'
+      - 'data/events/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: phase6-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            phase6-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Phase 6 backtest
+        run: python backtest/run_backtest_phase6.py
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: surge-phase6-results
+          path: backtest/results/phase6
+          if-no-files-found: error
+
+      - name: Commit Phase 6 results
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin backtest-paytm-intraday
+          git rebase origin/backtest-paytm-intraday || true
+          git add backtest/results/phase6
+          git diff --cached --quiet && exit 0
+          git commit -m 'Update Phase 6 backtest results'
+          git push origin HEAD:backtest-paytm-intraday
