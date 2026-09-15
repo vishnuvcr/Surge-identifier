@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -75,16 +76,26 @@ def execute(row, allocation: float, costs: dict, target: float, stop_loss: float
 def load_optional_events(cfg: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
     news_path = ROOT / cfg["event_inputs"]["news_path"]
     corp_path = ROOT / cfg["event_inputs"]["corporate_actions_path"]
-    news = pd.DataFrame()
-    corp = pd.DataFrame()
-    if news_path.exists():
-        news = pd.read_csv(news_path)
-    if corp_path.exists():
-        corp = pd.read_csv(corp_path)
+    news = pd.read_csv(news_path) if news_path.exists() else pd.DataFrame()
+    corp = pd.read_csv(corp_path) if corp_path.exists() else pd.DataFrame()
     return news, corp
 
 
+def build_liquidity_table(prices: pd.DataFrame, lookback_sessions: int, min_turnover_cr: float) -> pd.DataFrame:
+    """Build point-in-time trailing median turnover once, instead of per signal day."""
+    p = prices[["date", "symbol", "turnover"]].copy()
+    p["date"] = pd.to_datetime(p["date"]).dt.normalize()
+    p["turnover_cr"] = p["turnover"].astype(float) / 1e7
+    daily = p.pivot(index="date", columns="symbol", values="turnover_cr").sort_index()
+    rolling = daily.rolling(lookback_sessions, min_periods=1).median().shift(1)
+    mask = rolling >= float(min_turnover_cr)
+    long = mask.stack(future_stack=True).rename("eligible").reset_index()
+    long = long[long["eligible"]].drop(columns="eligible")
+    return long
+
+
 def main() -> None:
+    started = time.perf_counter()
     cfg = yaml.safe_load((ROOT / "backtest/config_phase6.yaml").read_text())
     out = ROOT / "backtest/results/phase6"
     out.mkdir(parents=True, exist_ok=True)
@@ -97,30 +108,42 @@ def main() -> None:
         fo.date = pd.to_datetime(fo.date).dt.normalize()
         data = prices.merge(fo, on=["date", "symbol"], how="left")
 
+    print(f"Loaded prices={len(prices):,} rows, f&o={len(fo):,} rows", flush=True)
+    t0 = time.perf_counter()
     feat = build_features(data)
+    print(f"Feature build: {time.perf_counter() - t0:.1f}s", flush=True)
     feat.date = pd.to_datetime(feat.date).dt.normalize()
+
     news, corp = load_optional_events(cfg)
     feat = add_point_in_time_events(feat, news, corp)
     feat = add_forward_targets(feat, tuple(cfg["target_levels"]), float(cfg["stop_loss_pct"]))
 
-    days = sorted(pd.to_datetime(feat.date).unique())
+    days = pd.DatetimeIndex(sorted(pd.to_datetime(feat.date).unique()))
     eval_days = days[cfg["min_train_days"]:]
     if cfg.get("backtest_start"):
-        eval_days = [d for d in eval_days if d >= pd.Timestamp(cfg["backtest_start"])]
+        eval_days = eval_days[eval_days >= pd.Timestamp(cfg["backtest_start"])]
     if cfg.get("backtest_end"):
-        eval_days = [d for d in eval_days if d <= pd.Timestamp(cfg["backtest_end"])]
+        eval_days = eval_days[eval_days <= pd.Timestamp(cfg["backtest_end"])]
 
-    next_day = {days[i]: days[i + 1] for i in range(len(days) - 1)}
+    next_day = dict(zip(days[:-1], days[1:]))
     prices_idx = prices.set_index(["date", "symbol"]).sort_index()
     portfolio_sizes = [int(x) for x in cfg["portfolio_sizes"]]
     states = {ps: {"capital": float(cfg["initial_capital"]), "trades": [], "daily": []} for ps in portfolio_sizes}
 
+    print(f"Evaluation sessions: {len(eval_days)}", flush=True)
+    t0 = time.perf_counter()
+    liquidity = build_liquidity_table(prices, int(cfg["liquidity_lookback_sessions"]), float(cfg["min_avg_turnover_cr"]))
+    liquidity_dates = {d: set(g["symbol"]) for d, g in liquidity.groupby("date")}
+    print(f"Liquidity table: {time.perf_counter() - t0:.1f}s", flush=True)
+
     last_period = None
     bundles = {}
+    monthly_refits = 0
 
-    for signal_day in eval_days:
+    for idx, signal_day in enumerate(eval_days, 1):
         period = pd.Timestamp(signal_day).to_period("M")
         if period != last_period:
+            refit_started = time.perf_counter()
             prior = feat[feat.date < signal_day].copy()
             prior["label_date"] = prior.groupby("symbol").date.shift(-1)
             prior = prior[prior.label_date.notna() & (prior.label_date < signal_day)].drop(columns=["label_date"])
@@ -135,6 +158,12 @@ def main() -> None:
                     stop_loss=float(cfg["stop_loss_pct"]),
                     seed=int(cfg["seed"]),
                 )
+            monthly_refits += 1
+            print(
+                f"Refit {monthly_refits}: period={period} train_days={len(train_days)} "
+                f"experts={len(bundles)} elapsed={time.perf_counter() - refit_started:.1f}s",
+                flush=True,
+            )
             last_period = period
 
         if not bundles:
@@ -144,20 +173,28 @@ def main() -> None:
         if d.empty:
             continue
 
-        hist = prices[prices.date < signal_day]
-        hdays = sorted(hist.date.unique())[-cfg["liquidity_lookback_sessions"]:]
-        med_turnover = hist[hist.date.isin(hdays)].groupby("symbol").turnover.median() / 1e7
-        eligible = med_turnover[med_turnover >= cfg["min_avg_turnover_cr"]].index
-        universe = d[d.symbol.isin(eligible)].copy()
+        eligible_symbols = liquidity_dates.get(signal_day, set())
+        if not eligible_symbols:
+            continue
+        universe = d[d.symbol.isin(eligible_symbols)].copy()
         if universe.empty:
             continue
 
         scored = score_experts(bundles, universe, target_levels=tuple(cfg["target_levels"]))
         if scored.empty:
             continue
-        # Require positive predicted net return above the configured hurdle.
         scored = scored[scored.expert_rule_score >= 0.70].copy()
-        scored = scored[scored[[f"pred_{str(t).replace('.', 'p').lstrip('0')}" for t in cfg["target_levels"]]].max(axis=1) >= cfg["min_expected_return_pct"]].copy()
+        if scored.empty:
+            for ps in portfolio_sizes:
+                st = states[ps]
+                st["daily"].append({
+                    "signal_date": signal_day, "entry_date": next_day.get(signal_day), "executed": 0,
+                    "starting_equity": st["capital"], "ending_equity": st["capital"], "daily_pnl": 0.0,
+                    "daily_return_pct": 0.0, "portfolio_size": ps, "selected_count": 0,
+                })
+            continue
+        pred_cols = [f"pred_{str(t).replace('.', 'p').lstrip('0')}" for t in cfg["target_levels"]]
+        scored = scored[scored[pred_cols].max(axis=1) >= cfg["min_expected_return_pct"]].copy()
         picks = select_trades(scored, cfg)
         if picks.empty:
             for ps in portfolio_sizes:
@@ -172,7 +209,8 @@ def main() -> None:
         entry_day = next_day.get(signal_day)
         if entry_day is None:
             continue
-        picks = picks[picks.symbol.map(lambda s: (entry_day, s) in prices_idx.index)].copy()
+        entry_symbols = prices_idx.loc[entry_day].index if entry_day in prices_idx.index.get_level_values(0) else pd.Index([])
+        picks = picks[picks.symbol.isin(entry_symbols)].copy()
         if picks.empty:
             continue
 
@@ -203,6 +241,10 @@ def main() -> None:
                 "daily_pnl": total_pnl, "daily_return_pct": total_pnl / max(start_capital, 1.0),
                 "portfolio_size": ps, "selected_count": len(chosen),
             })
+
+        if idx == 1 or idx % 20 == 0 or idx == len(eval_days):
+            elapsed = time.perf_counter() - started
+            print(f"Progress {idx}/{len(eval_days)} signal_day={pd.Timestamp(signal_day).date()} total_elapsed={elapsed:.1f}s", flush=True)
 
     summaries = []
     expert_rows = []
@@ -276,21 +318,28 @@ def main() -> None:
     pd.DataFrame(regime_rows).to_csv(out / "regime_performance.csv", index=False)
 
     metadata = {
-        "architecture": "regime-aware mixture-of-experts with expert-specific RandomForest return models",
+        "architecture": "regime-aware mixture-of-experts with expert-specific multi-target RandomForest return models",
         "experts": list(bundles.keys()),
         "event_inputs_present": {"news": not news.empty, "corporate_actions": not corp.empty},
+        "monthly_refits": monthly_refits,
+        "runtime_seconds": time.perf_counter() - started,
         "anti_lookahead": [
             "Training rows use labels whose next-session label date is strictly before the signal day.",
             "All strategy models are refit monthly using only prior sessions.",
-            "Liquidity is computed strictly before each signal day.",
+            "Liquidity is precomputed with a trailing window shifted one session, so each signal uses only prior liquidity history.",
             "Signals are produced EOD and executed at the next session open.",
             "Daily-bar TP/SL conflicts are resolved conservatively as stop-first.",
             "Event inputs are optional and must carry timestamps; only information mapped to the signal date is used.",
         ],
+        "optimization": [
+            "One multi-output RandomForest per expert instead of one forest per expert/target.",
+            "Point-in-time liquidity eligibility precomputed once for the backtest.",
+            "Vectorized candidate/target selection.",
+        ],
         "objective": {"daily_net_pct": cfg["objective_daily_net_pct"], "monthly_pct": cfg["objective_monthly_pct"]},
     }
     (out / "metadata.json").write_text(json.dumps(metadata, indent=2, default=str))
-    print(json.dumps({"summaries": summaries, "experts": list(bundles.keys())}, indent=2, default=str))
+    print(json.dumps({"summaries": summaries, "experts": list(bundles.keys()), "runtime_seconds": time.perf_counter() - started}, indent=2, default=str))
 
 
 if __name__ == "__main__":
