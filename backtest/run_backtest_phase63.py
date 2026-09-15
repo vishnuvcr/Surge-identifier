@@ -26,9 +26,7 @@ def main() -> None:
     cfg = yaml.safe_load((ROOT / "backtest/config_phase63.yaml").read_text())
     out = Path(os.environ.get("PHASE63_OUTPUT_DIR", ROOT / "backtest/results/phase63"))
     out.mkdir(parents=True, exist_ok=True)
-
     print("=== PHASE 6.3 ADAPTIVE CPR/CAMARILLA MoE ===", flush=True)
-    print(f"Python={sys.version.split()[0]} workspace={ROOT}", flush=True)
 
     prices = load_prices("data/cache", int(cfg["lookback_days"]))
     prices.date = pd.to_datetime(prices.date).dt.normalize()
@@ -55,6 +53,7 @@ def main() -> None:
         eval_days = eval_days[eval_days <= pd.Timestamp(cfg["backtest_end"])]
     next_day = dict(zip(days[:-1], days[1:]))
     prices_idx = prices.set_index(["date", "symbol"]).sort_index()
+    price_days = set(prices_idx.index.get_level_values(0).unique())
     eligible_set = liquidity_table(prices, int(cfg["liquidity_lookback_sessions"]), float(cfg["min_avg_turnover_cr"]))
 
     sizes = [int(x) for x in cfg["portfolio_sizes"]]
@@ -62,17 +61,7 @@ def main() -> None:
     bundles = {}
     router = None
     last_period = None
-    diagnostics = {
-        "phase": "6.3",
-        "signal_days": 0,
-        "candidate_rows": 0,
-        "qualified_rows": 0,
-        "trade_days": 0,
-        "no_trade_days": 0,
-        "expert_refits": [],
-        "cpr_enabled": bool(cfg.get("include_cpr_camarilla", True)),
-        "information_cutoff": "signal-day close; CPR/Camarilla levels use prior completed session",
-    }
+    diagnostics = {"phase": "6.3", "signal_days": 0, "candidate_rows": 0, "qualified_rows": 0, "trade_days": 0, "no_trade_days": 0, "expert_refits": [], "cpr_enabled": bool(cfg.get("include_cpr_camarilla", True)), "information_cutoff": "signal-day close; CPR/Camarilla levels use prior completed session"}
 
     for i, signal_day in enumerate(eval_days, 1):
         diagnostics["signal_days"] += 1
@@ -91,7 +80,8 @@ def main() -> None:
             last_period = period
 
         daily_picks = None
-        if bundles:
+        entry_day = next_day.get(signal_day)
+        if bundles and entry_day is not None and entry_day in price_days:
             symbols = {s for d, s in eligible_set if d == signal_day}
             universe = feat[(feat.date == signal_day) & feat.symbol.isin(symbols)].copy()
             diagnostics["candidate_rows"] += len(universe)
@@ -99,21 +89,17 @@ def main() -> None:
                 scored = score_experts(bundles, universe, tuple(cfg["target_levels"]))
                 picks = route_and_rank(scored, router, cfg)
                 diagnostics["qualified_rows"] += len(picks)
-                entry_day = next_day.get(signal_day)
-                if entry_day is not None and entry_day in prices.index if False else True:
-                    if entry_day in prices_idx.index.get_level_values(0):
-                        entry_symbols = prices_idx.loc[entry_day].index
-                        daily_picks = picks[picks.symbol.isin(entry_symbols)].copy()
+                entry_symbols = prices_idx.loc[entry_day].index
+                daily_picks = picks[picks.symbol.isin(entry_symbols)].copy()
 
         if daily_picks is None or daily_picks.empty:
             diagnostics["no_trade_days"] += 1
             for ps in sizes:
                 st = states[ps]
-                st["daily"].append({"signal_date": signal_day, "entry_date": next_day.get(signal_day), "executed": 0, "starting_equity": st["capital"], "ending_equity": st["capital"], "daily_pnl": 0.0, "daily_return_pct": 0.0, "selected_count": 0})
+                st["daily"].append({"signal_date": signal_day, "entry_date": entry_day, "executed": 0, "starting_equity": st["capital"], "ending_equity": st["capital"], "daily_pnl": 0.0, "daily_return_pct": 0.0, "selected_count": 0})
             continue
 
         diagnostics["trade_days"] += 1
-        entry_day = next_day[signal_day]
         for ps in sizes:
             st = states[ps]
             chosen = daily_picks.head(min(ps, int(cfg["max_candidates_per_day"]))).copy()
