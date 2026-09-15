@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     outputs:
-      blocks: ${{ steps.discover.outputs.blocks }}
+      matrix: ${{ steps.discover.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -55,25 +55,28 @@ jobs:
           from pathlib import Path
           import pandas as pd
           import yaml
+
           cfg = yaml.safe_load(open('backtest/config_phase62.yaml'))
           p = Path('data/cache/prices.parquet')
           f = Path('data/cache/fo.parquet')
           assert p.exists(), 'prices.parquet missing after preparation'
           assert f.exists(), 'fo.parquet missing after preparation'
+
           px = pd.read_parquet(p, columns=['date','symbol'])
           fo = pd.read_parquet(f, columns=['date','symbol'])
           px['date'] = pd.to_datetime(px['date']).dt.normalize()
           fo['date'] = pd.to_datetime(fo['date']).dt.normalize()
           cash_dates = sorted(px.date.unique())
           fo_dates = sorted(fo.date.unique())
+
           min_train = int(cfg['min_train_days'])
           assert len(cash_dates) >= min_train + 5, f'Insufficient cash history: {len(cash_dates)} dates'
           assert len(fo_dates) >= min(120, len(cash_dates)), f'Insufficient F&O history: {len(fo_dates)} dates'
+
           min_date = pd.Timestamp(cash_dates[0])
           max_date = pd.Timestamp(cash_dates[-1])
           print(f'cache OK: cash_dates={len(cash_dates)} fo_dates={len(fo_dates)} min={min_date.date()} max={max_date.date()}', flush=True)
 
-          # Discover blocks from the ACTUAL available data rather than assuming fixed years.
           blocks = []
           cursor = pd.Timestamp(min_date.year, min_date.month, 1)
           end_limit = max_date + pd.Timedelta(days=1)
@@ -87,20 +90,25 @@ jobs:
               cursor = nxt
 
           assert blocks, 'No chronological backtest blocks discovered'
-          assert all(blocks[i]['start'] < blocks[i]['end'] for i in range(len(blocks)))
-          assert all(blocks[i]['end'] == blocks[i + 1]['start'] for i in range(len(blocks) - 1))
-          print('discovered blocks:', json.dumps(blocks, separators=(',', ':')), flush=True)
+          assert all(b['start'] < b['end'] for b in blocks), f'Invalid block boundaries: {blocks}'
+          assert all(blocks[i]['end'] == blocks[i + 1]['start'] for i in range(len(blocks) - 1)), f'Non-contiguous blocks: {blocks}'
+          assert blocks[0]['start'] <= min_date.strftime('%Y-%m-%d') < blocks[-1]['end']
+          assert blocks[-1]['end'] > max_date.strftime('%Y-%m-%d')
 
-          # GitHub Actions output must contain exactly `name=value` lines.
-          # Emit the JSON array directly so fromJSON(needs.prepare-data.outputs.blocks)
-          # receives an array of objects rather than a doubly-encoded string.
-          print('blocks=' + json.dumps(blocks, separators=(',', ':')))
+          matrix = {'block': blocks}
+          matrix_json = json.dumps(matrix, separators=(',', ':'))
+          print('discovered matrix:', matrix_json, flush=True)
+
+          # GITHUB_OUTPUT must contain one valid name=value record.
+          # The matrix itself is an object whose block key is an array of objects;
+          # this is the supported form for a dynamically generated GitHub Actions matrix.
+          print('matrix=' + matrix_json)
           PY
       - name: Cache prepared data for all shards
         uses: actions/cache@v4
         with:
           path: data/cache
-          key: phase62-data-v4-${{ runner.os }}-${{ hashFiles('backtest/config_phase62.yaml', 'src/nse_data.py', 'src/nse_fo.py') }}
+          key: phase62-data-v5-${{ runner.os }}-${{ hashFiles('backtest/config_phase62.yaml', 'src/nse_data.py', 'src/nse_fo.py') }}
 
   backtest:
     needs: prepare-data
@@ -109,8 +117,7 @@ jobs:
     strategy:
       fail-fast: false
       max-parallel: 6
-      matrix:
-        block: ${{ fromJSON(needs.prepare-data.outputs.blocks) }}
+      matrix: ${{ fromJSON(needs.prepare-data.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -123,7 +130,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: data/cache
-          key: phase62-data-v4-${{ runner.os }}-${{ hashFiles('backtest/config_phase62.yaml', 'src/nse_data.py', 'src/nse_fo.py') }}
+          key: phase62-data-v5-${{ runner.os }}-${{ hashFiles('backtest/config_phase62.yaml', 'src/nse_data.py', 'src/nse_fo.py') }}
           fail-on-cache-miss: true
       - name: Validate restored cache and shard configuration
         env:
@@ -133,10 +140,10 @@ jobs:
           python backtest/phase62_preflight.py
           python - <<'PY'
           import pandas as pd
-          px=pd.read_parquet('data/cache/prices.parquet', columns=['date'])
-          dates=pd.to_datetime(px['date']).dt.normalize()
-          start=pd.Timestamp('${{ matrix.block.start }}')
-          end=pd.Timestamp('${{ matrix.block.end }}')
+          px = pd.read_parquet('data/cache/prices.parquet', columns=['date'])
+          dates = pd.to_datetime(px['date']).dt.normalize()
+          start = pd.Timestamp('${{ matrix.block.start }}')
+          end = pd.Timestamp('${{ matrix.block.end }}')
           assert dates.min() < end, f'Block {start.date()}-{end.date()} has no available cash history'
           assert dates.max() >= start, f'Block {start.date()}-{end.date()} lies after available cash history'
           print(f'Shard cache/config OK: available={dates.min().date()}..{dates.max().date()} block={start.date()}..{end.date()}')
@@ -155,10 +162,10 @@ jobs:
           test -s "$PHASE62_OUTPUT_DIR/summary.json"
           python - <<'PY'
           import json, os
-          p=os.environ['PHASE62_OUTPUT_DIR']+'/summary.json'
-          x=json.load(open(p))
-          required={'diagnostics','summaries','runtime_seconds'}
-          missing=required-set(x)
+          p = os.environ['PHASE62_OUTPUT_DIR'] + '/summary.json'
+          x = json.load(open(p))
+          required = {'diagnostics','summaries','runtime_seconds'}
+          missing = required - set(x)
           assert not missing, f'Missing result fields: {missing}'
           print('Shard output schema OK')
           PY
@@ -191,12 +198,12 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import json
-          root=Path('backtest/results/phase62/blocks')
-          summaries=sorted(root.rglob('summary.json'))
+          root = Path('backtest/results/phase62/blocks')
+          summaries = sorted(root.rglob('summary.json'))
           print(f'Found {len(summaries)} shard summaries')
           assert summaries, 'No shard summaries found'
           for p in summaries:
-              x=json.loads(p.read_text())
+              x = json.loads(p.read_text())
               assert {'diagnostics','summaries','runtime_seconds'} <= set(x), f'Invalid {p}'
               print(p, 'OK')
           PY
