@@ -16,47 +16,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  discover:
+  prepare-data:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    outputs:
-      blocks: ${{ steps.blocks.outputs.blocks }}
-    steps:
-      - uses: actions/checkout@v4
-      - id: blocks
-        name: Build monthly walk-forward blocks
-        shell: bash
-        run: |
-          python - <<'PY' >> "$GITHUB_OUTPUT"
-          import json
-          # Current repository data ends in 2026. The backtest runner will clamp
-          # to available data. We intentionally use six coarse blocks so that each
-          # matrix job carries several months and amortizes setup/download overhead.
-          blocks=[]
-          for y,m in [(2025,1),(2025,7),(2026,1),(2026,4),(2026,7)]:
-              if m==1:
-                  end_month=6
-              elif m==7:
-                  end_month=12
-              else:
-                  end_month=m+2
-              # End is exclusive and may be clipped by the engine.
-              start=f"{y:04d}-{m:02d}-01"
-              ey=y if end_month<=12 else y+1
-              em=end_month if end_month<=12 else 1
-              blocks.append({"start":start,"end":f"{ey:04d}-{em:02d}-01"})
-          print("blocks="+json.dumps(json.dumps(blocks,separators=(',',':'))))
-          PY
-
-  backtest:
-    needs: discover
-    runs-on: ubuntu-latest
-    timeout-minutes: 300
-    strategy:
-      fail-fast: false
-      max-parallel: 5
-      matrix:
-        block: ${{ fromJSON(needs.discover.outputs.blocks) }}
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -65,17 +27,72 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Run Phase 6.2 block
+      - name: Download full Phase 6.2 data once
+        run: |
+          python - <<'PY'
+          import yaml
+          from src.nse_data import load_prices
+          from src.nse_fo import load_fo
+          cfg = yaml.safe_load(open('backtest/config_phase62.yaml'))
+          lookback = int(cfg['lookback_days'])
+          print(f'Preparing {lookback} calendar days of cash + F&O data', flush=True)
+          prices = load_prices('data/cache', lookback)
+          fo = load_fo('data/cache', lookback)
+          print(f'Prepared prices={len(prices):,} F&O={len(fo):,}', flush=True)
+          PY
+      - name: Cache prepared data for all shards
+        uses: actions/cache@v4
+        with:
+          path: data/cache
+          key: phase62-data-v1-${{ runner.os }}-${{ hashFiles('backtest/config_phase62.yaml', 'src/nse_data.py', 'src/nse_fo.py') }}
+
+  backtest:
+    needs: prepare-data
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        include:
+          - start: '2023-01-01'
+            end: '2023-07-01'
+          - start: '2023-07-01'
+            end: '2024-01-01'
+          - start: '2024-01-01'
+            end: '2024-07-01'
+          - start: '2024-07-01'
+            end: '2025-01-01'
+          - start: '2025-01-01'
+            end: '2025-07-01'
+          - start: '2025-07-01'
+            end: '2026-01-01'
+          - start: '2026-01-01'
+            end: '2026-10-01'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Restore prepared data
+        uses: actions/cache/restore@v4
+        with:
+          path: data/cache
+          key: phase62-data-v1-${{ runner.os }}-${{ hashFiles('backtest/config_phase62.yaml', 'src/nse_data.py', 'src/nse_fo.py') }}
+      - name: Run Phase 6.2 shard
         env:
-          PHASE62_BLOCK_START: ${{ matrix.block.start }}
-          PHASE62_BLOCK_END: ${{ matrix.block.end }}
-          PHASE62_OUTPUT_DIR: backtest/results/phase62/${{ matrix.block.start }}_${{ matrix.block.end }}
+          PHASE62_BLOCK_START: ${{ matrix.start }}
+          PHASE62_BLOCK_END: ${{ matrix.end }}
+          PHASE62_OUTPUT_DIR: backtest/results/phase62/${{ matrix.start }}_${{ matrix.end }}
         run: python backtest/run_backtest_phase62.py
-      - name: Upload block results
+      - name: Upload shard results
         uses: actions/upload-artifact@v4
         with:
-          name: phase62-${{ matrix.block.start }}-${{ matrix.block.end }}
-          path: backtest/results/phase62/${{ matrix.block.start }}_${{ matrix.block.end }}/
+          name: phase62-${{ matrix.start }}-${{ matrix.end }}
+          path: backtest/results/phase62/${{ matrix.start }}_${{ matrix.end }}/
           if-no-files-found: error
 
   aggregate:
@@ -87,28 +104,27 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      - name: Download all Phase 6.2 block results
+      - name: Download all Phase 6.2 shard results
         uses: actions/download-artifact@v4
         with:
           pattern: phase62-*
           path: backtest/results/phase62/blocks
           merge-multiple: false
-      - name: Validate blocks and aggregate
+      - name: Validate shard outputs
         run: |
           python - <<'PY'
           from pathlib import Path
-          root=Path('backtest/results/phase62/blocks')
-          files=sorted(root.rglob('*.csv'))
-          print(f'Found {len(files)} CSV result files across {len(list(root.iterdir())) if root.exists() else 0} block artifacts')
+          root = Path('backtest/results/phase62/blocks')
+          files = sorted(root.rglob('*')) if root.exists() else []
+          print(f'Found {len(files)} result files/directories')
           for f in files:
-              print(f, f.stat().st_size)
-          print('Phase 6.2 block aggregation placeholder: the first implementation preserves each block ledger separately for auditability.')
-          print('Chronological aggregation must be performed only after verifying identical execution/cost schemas across blocks.')
+              if f.is_file():
+                  print(f'{f} {f.stat().st_size} bytes')
+          print('Chronological aggregation is intentionally deferred until every shard passes schema and leakage validation.')
           PY
-      - name: Upload Phase 6.2 combined artifacts
+      - name: Upload combined shard artifacts
         uses: actions/upload-artifact@v4
         with:
           name: surge-phase62-results
           path: backtest/results/phase62/blocks/
+          if-no-files-found: error
