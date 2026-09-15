@@ -21,7 +21,7 @@
   "portfolio_fullness_ratio": 1.0,
   "days_using_expected_return_layer": 101,
   "return_rank_validation": {
-    "median_rank_ic": 0.27418145380147374,
+    "median_rank_ic": 0.2741814608876572,
     "median_mae": 0.01566629484295845
   },
   "anti_lookahead": [
