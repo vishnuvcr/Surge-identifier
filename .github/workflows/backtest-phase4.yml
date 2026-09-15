@@ -3,6 +3,8 @@ name: Surge Strategy Backtest Phase 4
 on:
   push:
     branches: [backtest-paytm-intraday]
+    paths-ignore:
+      - backtest/results/phase4/**
   workflow_dispatch:
 
 permissions:
