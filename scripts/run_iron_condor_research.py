@@ -22,7 +22,15 @@ def combinations(cfg):
 def rank(s):
     if not s.get("data_ok"):
         return -1e9
-    return 2*s["median_weekly_return"] + s["avg_weekly_return"] + 0.05*s["weeks_at_or_above_5pct"] + 0.25*s["weeks_nonnegative"] + 0.10*s["win_rate"] + 0.5*s["worst_weekly_return"] + 0.5*s["max_drawdown"]
+    return (
+        2 * s["median_weekly_return"]
+        + s["avg_weekly_return"]
+        + 0.05 * s["weeks_at_or_above_5pct"]
+        + 0.25 * s["weeks_nonnegative"]
+        + 0.10 * s["win_rate"]
+        + 0.5 * s["worst_weekly_return"]
+        + 0.5 * s["max_drawdown"]
+    )
 
 
 def main():
@@ -30,8 +38,6 @@ def main():
     out = Path("backtest/results/iron-condor")
     out.mkdir(parents=True, exist_ok=True)
 
-    # Keep the research horizon aligned with the data-build step. This is deliberately
-    # configurable so future runs can use a different, explicitly recorded horizon.
     lookback_days = int(os.environ.get("IRON_CONDOR_LOOKBACK_DAYS", "2500"))
     data = load_nifty_options("data/cache", lookback_days=lookback_days)
     if data.empty:
@@ -42,7 +48,9 @@ def main():
     data.to_parquet("data/cache/nifty_options.parquet", index=False)
 
     dates = sorted(data.date.unique())
-    split_index = max(1, int(len(dates) * .70))
+    if len(dates) < 50:
+        raise RuntimeError(f"Too few dates for 70/30 walk-forward: {len(dates)}")
+    split_index = min(len(dates) - 1, max(1, int(len(dates) * 0.70)))
     split = pd.Timestamp(dates[split_index])
     train = data[data.date < split].copy()
     test = data[data.date >= split].copy()
@@ -62,10 +70,22 @@ def main():
     if best is None:
         raise RuntimeError("No viable iron condor configuration in training period")
 
-    _, oos = backtest(test, best)
-    oos.update({"split_date": str(split.date()), "selected_parameters": best, "dataset_start": str(data.date.min().date()), "dataset_end": str(data.date.max().date()), "lookback_days": lookback_days})
-    leaderboard = pd.DataFrame(rows).sort_values("train_score", ascending=False)
+    oos_trades, oos = backtest(test, best)
+    if not oos.get("data_ok"):
+        raise RuntimeError("Selected configuration produced no OOS trades")
+    oos.update({
+        "split_date": str(split.date()),
+        "selected_parameters": best,
+        "dataset_start": str(data.date.min().date()),
+        "dataset_end": str(data.date.max().date()),
+        "lookback_days": lookback_days,
+        "oos_trades": int(oos.get("trades", 0)),
+        "oos_return": float(oos.get("total_return", 0.0)),
+    })
+
+    leaderboard = pd.DataFrame(rows).sort_values("train_score", ascending=False).reset_index(drop=True)
     leaderboard.to_csv(out / "training_leaderboard.csv", index=False)
+    oos_trades.to_csv(out / "oos_trades.csv", index=False)
     (out / "oos_summary.json").write_text(json.dumps(oos, indent=2, default=str))
     print(json.dumps({"top_training_configs": leaderboard.head(10).to_dict("records"), "oos": oos}, indent=2, default=str))
 
