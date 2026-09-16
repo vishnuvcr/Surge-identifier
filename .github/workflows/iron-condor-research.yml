@@ -1,0 +1,59 @@
+name: NIFTY Weekly Iron Condor Research
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: iron-condor-research
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: iron-condor-weekly-research
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Download NIFTY option contract history
+        run: |
+          python - <<'PY'
+          from src.nse_options import load_nifty_options
+          x = load_nifty_options('data/cache', lookback_days=600)
+          print('rows=', len(x))
+          print('dates=', x['date'].min(), 'to', x['date'].max())
+          print('contracts=', x[['expiry','strike','option_type']].drop_duplicates().shape[0])
+          assert len(x) > 10000, 'Insufficient option history downloaded'
+          PY
+      - name: Run walk-forward iron condor research
+        run: python scripts/run_iron_condor_research.py
+      - name: Validate research artifacts
+        run: |
+          test -s backtest/results/iron-condor/training_leaderboard.csv
+          test -s backtest/results/iron-condor/oos_summary.json
+          python - <<'PY'
+          import json
+          x = json.load(open('backtest/results/iron-condor/oos_summary.json'))
+          print(json.dumps(x, indent=2))
+          assert 'data_ok' in x
+          PY
+      - name: Upload research artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nifty-iron-condor-research
+          path: |
+            backtest/results/iron-condor/
+            data/cache/nifty_options.parquet
+          if-no-files-found: error
