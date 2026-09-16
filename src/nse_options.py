@@ -47,7 +47,7 @@ def _parse(content: bytes, dt: date | None = None) -> pd.DataFrame:
         "close": pd.to_numeric(_pick(raw, "ClsPric", "CLSPRIC", "CLOSEPRICE", "CLOSE"), errors="coerce"),
         "settlement": pd.to_numeric(_pick(raw, "SttlmPric", "SETTLEPRICE", "SETTLE_PR"), errors="coerce"),
         "volume": pd.to_numeric(_pick(raw, "TtlTradgVol", "CONTRACTS", "TOTTRDQTY"), errors="coerce").fillna(0),
-        "oi": pd.to_numeric(_pick(raw, "OpnIntrst", "OPENINT", "OPEN_INT").fillna(0), errors="coerce"),
+        "oi": pd.to_numeric(_pick(raw, "OpnIntrst", "OPENINT", "OPEN_INT"), errors="coerce").fillna(0),
     })
 
 
@@ -90,12 +90,7 @@ def _parse_external_archives(archive_root: Path, start: date, end: date) -> list
 
 
 def _download_nifty_spot_proxy(start: date, end: date) -> pd.DataFrame:
-    """Fetch daily NIFTY 50 index closes as a deterministic fallback proxy.
-
-    The Kaggle option datasets currently available to the workflow can contain
-    option rows without a usable spot/index record. Yahoo's public chart API
-    provides a daily NIFTY 50 index series that can be joined by trading date.
-    """
+    """Fetch daily NIFTY 50 index closes as a deterministic fallback proxy."""
     try:
         p1 = int(datetime.combine(start, datetime.min.time(), tzinfo=IST).timestamp())
         p2 = int(datetime.combine(end + timedelta(days=1), datetime.min.time(), tzinfo=IST).timestamp())
@@ -111,12 +106,10 @@ def _download_nifty_spot_proxy(start: date, end: date) -> pd.DataFrame:
         closes = quote.get("close") or []
         if not stamps or not closes or len(stamps) != len(closes):
             return pd.DataFrame(columns=["date", "underlying_close"])
-        out = pd.DataFrame({
-            "date": pd.to_datetime(stamps, unit="s", utc=True).dt.tz_convert("Asia/Kolkata").dt.normalize(),
-            "underlying_close": pd.to_numeric(closes, errors="coerce"),
-        })
+        dates = pd.Series(pd.to_datetime(stamps, unit="s", utc=True).tz_convert("Asia/Kolkata").normalize())
+        out = pd.DataFrame({"date": dates, "underlying_close": pd.to_numeric(closes, errors="coerce")})
         out = out.dropna(subset=["date", "underlying_close"])
-        out = out.loc[(out["underlying_close"] > 0)]
+        out = out.loc[out["underlying_close"] > 0]
         out["date"] = out["date"].dt.tz_localize(None)
         return out.drop_duplicates("date", keep="last").sort_values("date").reset_index(drop=True)
     except Exception as exc:
