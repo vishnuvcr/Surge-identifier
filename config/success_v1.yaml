@@ -1,5 +1,6 @@
 capital: 100000
 underlying: NIFTY
+# Python datetime.weekday(): Monday=0, Tuesday=1, ..., Sunday=6.
 entry_weekday: 1
 min_days_to_expiry: 1
 max_days_to_expiry: 7
@@ -8,10 +9,10 @@ wing_width_points: [100, 150, 200, 250]
 take_profit_credit_pct: [0.40, 0.50, 0.60, 0.70]
 stop_loss_credit_multiple: [1.0, 1.25, 1.50, 2.0]
 max_trades_per_week: 1
-# Current research candidate from the long-history run; this is PAPER TEST ONLY.
+# Current paper candidate from the corrected long-history run; PAPER TEST ONLY.
 selected_distance: 0.0125
-selected_wing_width: 200
+selected_wing_width: 250
 selected_take_profit: 0.40
 selected_stop_loss: 1.00
-# Keep one lot for prospective validation unless manually overridden.
+# One market lot means one contract lot of the applicable historical lot size.
 paper_lots: 1
