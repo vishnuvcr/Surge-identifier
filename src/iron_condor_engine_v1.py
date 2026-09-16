@@ -54,6 +54,7 @@ class PreparedMarket:
         r["option_type"] = r["option_type"].astype(str).str.upper()
         self.rows = r.reset_index(drop=True)
         self.dates = tuple(pd.Timestamp(x) for x in sorted(self.rows["date"].unique()))
+        # Default is Tuesday (Python weekday=1); the research config can override it.
         self.entry_dates = tuple(d for d in self.dates if d.weekday() == 1)
         self.spot = self.rows.groupby("date")["underlying_close"].last().dropna().astype(float).to_dict()
         self.expiries_by_date = {}
@@ -157,9 +158,19 @@ def _metrics(t: pd.DataFrame, capital: float):
 
 
 def backtest_prepared(market: PreparedMarket, cfg):
+    """Run a fixed configuration using the configured entry weekday and DTE window."""
+    entry_weekday = int(cfg.get("entry_weekday", 1))
+    min_dte = int(cfg.get("min_days_to_expiry", 1))
+    max_dte = int(cfg.get("max_days_to_expiry", 7))
+    if not 0 <= entry_weekday <= 6:
+        raise ValueError("entry_weekday must be 0..6 using Python weekday convention (Mon=0, Tue=1, ...)")
+    if min_dte < 0 or max_dte < min_dte:
+        raise ValueError("Invalid expiry DTE window")
+
+    entry_dates = tuple(d for d in market.dates if d.weekday() == entry_weekday)
     trades = []
-    for d in market.entry_dates:
-        expiry = next((x for x in market.expiries_by_date.get(d, ()) if 1 <= (x - d).days <= 7), None)
+    for d in entry_dates:
+        expiry = next((x for x in market.expiries_by_date.get(d, ()) if min_dte <= (x - d).days <= max_dte), None)
         if expiry is None: continue
         strikes = choose(market, d, expiry, cfg["distance"], cfg["width"])
         if strikes is None: continue
@@ -194,16 +205,15 @@ def backtest_prepared(market: PreparedMarket, cfg):
         gross = (credit + mark) * lot
         cost = CostModel().total([(entry[0],exit_px[0],1),(entry[1],exit_px[1],-1),(entry[2],exit_px[2],-1),(entry[3],exit_px[3],1)], lot)
         net = gross - cost
-        max_loss = max_loss_points * lot
         trades.append({
             "entry_date": d, "exit_date": exit_date, "expiry": expiry,
             "put_long": pl, "put_short": ps, "call_short": cs, "call_long": cl,
             "entry_put_long": entry[0], "entry_put_short": entry[1], "entry_call_short": entry[2], "entry_call_long": entry[3],
             "exit_put_long": exit_px[0], "exit_put_short": exit_px[1], "exit_call_short": exit_px[2], "exit_call_long": exit_px[3],
-            "credit": credit, "max_loss_points": max_loss_points, "max_loss": max_loss,
+            "credit": credit, "max_loss_points": max_loss_points, "max_loss": max_loss_points * lot,
             "breakeven_lower": ps - credit, "breakeven_upper": cs + credit,
             "gross_pnl": gross, "costs": cost, "net_pnl": net,
-            "return_on_capital": net / cfg["capital"], "return_on_max_loss": net / max_loss,
+            "return_on_capital": net / cfg["capital"], "return_on_max_loss": net / (max_loss_points * lot),
             "reason": reason, "lot": lot,
             "conservative_intraday_pnl_points": adverse,
             "conservative_intraday_bound_date": adverse_day,
