@@ -27,10 +27,11 @@ def _parse(content: bytes, dt: date | None = None) -> pd.DataFrame:
         with zf.open(zf.namelist()[0]) as f:
             raw = pd.read_csv(f)
     raw.columns = [str(c).strip() for c in raw.columns]
-    trade_date = _pick(raw, "TradDt", "TIMESTAMP", "Trade_Date")
-    parsed_date = pd.to_datetime(trade_date, errors="coerce").dt.normalize()
     if dt is not None:
-        parsed_date = parsed_date.fillna(pd.Timestamp(dt).normalize())
+        parsed_date = pd.Series(pd.Timestamp(dt).normalize(), index=raw.index)
+    else:
+        trade_date = _pick(raw, "TradDt", "TIMESTAMP", "Trade_Date")
+        parsed_date = pd.to_datetime(trade_date, errors="coerce").dt.normalize()
     return pd.DataFrame({
         "date": parsed_date,
         "symbol": _pick(raw, "TckrSymb", "SYMBOL").astype(str).str.strip().str.upper(),
