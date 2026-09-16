@@ -14,6 +14,7 @@ import requests
 
 IST = timezone(timedelta(hours=5, minutes=30))
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/134 Safari/537.36"
+YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/%5ENSEI"
 
 
 def _pick(raw: pd.DataFrame, *names):
@@ -46,7 +47,7 @@ def _parse(content: bytes, dt: date | None = None) -> pd.DataFrame:
         "close": pd.to_numeric(_pick(raw, "ClsPric", "CLSPRIC", "CLOSEPRICE", "CLOSE"), errors="coerce"),
         "settlement": pd.to_numeric(_pick(raw, "SttlmPric", "SETTLEPRICE", "SETTLE_PR"), errors="coerce"),
         "volume": pd.to_numeric(_pick(raw, "TtlTradgVol", "CONTRACTS", "TOTTRDQTY"), errors="coerce").fillna(0),
-        "oi": pd.to_numeric(_pick(raw, "OpnIntrst", "OPENINT", "OPEN_INT"), errors="coerce").fillna(0),
+        "oi": pd.to_numeric(_pick(raw, "OpnIntrst", "OPENINT", "OPEN_INT").fillna(0), errors="coerce"),
     })
 
 
@@ -86,6 +87,54 @@ def _parse_external_archives(archive_root: Path, start: date, end: date) -> list
         except Exception:
             continue
     return frames
+
+
+def _download_nifty_spot_proxy(start: date, end: date) -> pd.DataFrame:
+    """Fetch daily NIFTY 50 index closes as a deterministic fallback proxy.
+
+    The Kaggle option datasets currently available to the workflow can contain
+    option rows without a usable spot/index record. Yahoo's public chart API
+    provides a daily NIFTY 50 index series that can be joined by trading date.
+    """
+    try:
+        p1 = int(datetime.combine(start, datetime.min.time(), tzinfo=IST).timestamp())
+        p2 = int(datetime.combine(end + timedelta(days=1), datetime.min.time(), tzinfo=IST).timestamp())
+        params = {"period1": p1, "period2": p2, "interval": "1d", "events": "history", "includeAdjustedClose": "true"}
+        r = requests.get(YAHOO_CHART_URL, params=params, headers={"User-Agent": UA}, timeout=30)
+        r.raise_for_status()
+        payload = r.json()
+        result = (((payload.get("chart") or {}).get("result") or [None])[0])
+        if not result:
+            return pd.DataFrame(columns=["date", "underlying_close"])
+        stamps = result.get("timestamp") or []
+        quote = ((result.get("indicators") or {}).get("quote") or [{}])[0]
+        closes = quote.get("close") or []
+        if not stamps or not closes or len(stamps) != len(closes):
+            return pd.DataFrame(columns=["date", "underlying_close"])
+        out = pd.DataFrame({
+            "date": pd.to_datetime(stamps, unit="s", utc=True).dt.tz_convert("Asia/Kolkata").dt.normalize(),
+            "underlying_close": pd.to_numeric(closes, errors="coerce"),
+        })
+        out = out.dropna(subset=["date", "underlying_close"])
+        out = out.loc[(out["underlying_close"] > 0)]
+        out["date"] = out["date"].dt.tz_localize(None)
+        return out.drop_duplicates("date", keep="last").sort_values("date").reset_index(drop=True)
+    except Exception as exc:
+        print(f"NIFTY Yahoo proxy unavailable: {type(exc).__name__}: {exc}", flush=True)
+        return pd.DataFrame(columns=["date", "underlying_close"])
+
+
+def _apply_underlying_proxy(options: pd.DataFrame, proxy: pd.DataFrame) -> pd.DataFrame:
+    if options.empty or proxy.empty:
+        return options
+    options = options.copy()
+    supplied = options[["date", "underlying_close"]].dropna().groupby("date", as_index=False)["underlying_close"].last()
+    supplied = supplied.rename(columns={"underlying_close": "supplied_underlying"})
+    options = options.drop(columns=["underlying_close"]).merge(supplied, on="date", how="left", validate="many_to_one")
+    proxy = proxy.rename(columns={"underlying_close": "proxy_underlying"})
+    options = options.merge(proxy, on="date", how="left", validate="many_to_one")
+    options["underlying_close"] = options["supplied_underlying"].fillna(options["proxy_underlying"])
+    return options.drop(columns=["supplied_underlying", "proxy_underlying"])
 
 
 def _finalize(raw: pd.DataFrame, root: Path, start: date, end: date) -> pd.DataFrame:
@@ -134,11 +183,19 @@ def load_nifty_options(cache_dir: str, lookback_days: int = 900) -> pd.DataFrame
     if kaggle_roots:
         try:
             from src.kaggle_options import load_from_kaggle_roots
-            k = load_from_kaggle_roots(kaggle_roots)
+            k = load_from_kaggle_roots([str(x) for x in kaggle_roots])
             if not k.empty:
                 k = k[(pd.to_datetime(k.date).dt.date >= start) & (pd.to_datetime(k.date).dt.date <= end)].copy()
                 if not k.empty:
-                    return _finalize(k, root, start, end)
+                    coverage = float(k["underlying_close"].notna().mean()) if "underlying_close" in k.columns else 0.0
+                    if coverage < 0.95:
+                        proxy = _download_nifty_spot_proxy(start, end)
+                        if not proxy.empty:
+                            print(f"Applying Yahoo NIFTY spot proxy: {len(proxy)} dates", flush=True)
+                            k = _apply_underlying_proxy(k, proxy)
+                    if float(k["underlying_close"].notna().mean()) >= 0.95:
+                        return _finalize(k, root, start, end)
+                    print(f"Kaggle options loaded but underlying coverage remains {k['underlying_close'].notna().mean():.3f}; falling back.", flush=True)
         except Exception as exc:
             print(f"Kaggle loader failed; falling back to NSE archives/cache: {exc}")
 
@@ -168,4 +225,10 @@ def load_nifty_options(cache_dir: str, lookback_days: int = 900) -> pd.DataFrame
     if not frames:
         return pd.DataFrame()
     raw = pd.concat(frames, ignore_index=True)
-    return _finalize(raw, root, start, end)
+    out = _finalize(raw, root, start, end)
+    if out.empty or float(out["underlying_close"].notna().mean()) < 0.95:
+        proxy = _download_nifty_spot_proxy(start, end)
+        if not proxy.empty:
+            out = _apply_underlying_proxy(out, proxy)
+            out.to_parquet(root / "nifty_options.parquet", index=False)
+    return out
