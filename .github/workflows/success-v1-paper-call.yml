@@ -1,0 +1,68 @@
+name: Success V1 NIFTY Iron Condor Paper Call
+
+on:
+  workflow_dispatch:
+    inputs:
+      lookback_days:
+        description: "Recent NSE sessions to download"
+        required: false
+        default: "14"
+
+concurrency:
+  group: success-v1-paper-call
+  cancel-in-progress: false
+
+jobs:
+  paper-call:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PYTHONUNBUFFERED: "1"
+      NSE_HISTORY_START: ${{ format('{0}', '' ) }}
+      NSE_HISTORY_END: ${{ format('{0}', '' ) }}
+      NSE_HISTORY_WORKERS: "5"
+      IRON_CONDOR_DATA_PATH: data/cache/nifty_options_long.parquet
+      IRON_CONDOR_FUTURES_PATH: data/cache/nifty_futures_long.parquet
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: success-v1-iron-condor
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install "numpy>=2.0,<3" "pandas>=2.2,<3" "pyarrow>=17,<23" "requests>=2.32,<3" "pyyaml>=6,<7"
+      - name: Set recent NSE window
+        run: |
+          echo "NSE_HISTORY_START=$(date -u -d '${{ inputs.lookback_days || '14' }} days ago' +%Y-%m-%d)" >> "$GITHUB_ENV"
+          echo "NSE_HISTORY_END=$(date -u +%Y-%m-%d)" >> "$GITHUB_ENV"
+      - name: Download recent NSE option and futures history
+        run: python scripts/download_nifty_nse_history.py
+      - name: Generate paper trade call / position update
+        run: python scripts/generate_success_v1_call.py
+      - name: Upload paper call artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: success-v1-paper-call-${{ github.run_number }}
+          path: |
+            signals/latest_trade_call.md
+            signals/latest_trade_call.json
+            signals/open_trade.json
+            signals/trade_history.csv
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Commit paper call state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add signals/
+          if ! git diff --cached --quiet; then
+            git commit -m "Update Success V1 paper trade call [skip ci]"
+            git push origin HEAD:success-v1-iron-condor
+          else
+            echo "No signal-state changes to commit"
+          fi
