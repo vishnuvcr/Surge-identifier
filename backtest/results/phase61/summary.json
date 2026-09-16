@@ -46,11 +46,11 @@
     }
   },
   "diagnostics": {
-    "signal_days": 164,
+    "signal_days": 163,
     "candidate_rows": 0,
     "qualified_rows": 0,
     "trade_days": 0,
-    "no_trade_days": 164,
+    "no_trade_days": 163,
     "expert_refits": [
       {
         "period": "2026-01",
@@ -60,7 +60,7 @@
       },
       {
         "period": "2026-02",
-        "train_days": 130,
+        "train_days": 129,
         "experts": [
           "breakout",
           "fno",
@@ -74,7 +74,7 @@
       },
       {
         "period": "2026-03",
-        "train_days": 150,
+        "train_days": 149,
         "experts": [
           "breakout",
           "fno",
@@ -88,7 +88,7 @@
       },
       {
         "period": "2026-04",
-        "train_days": 169,
+        "train_days": 168,
         "experts": [
           "breakout",
           "fno",
@@ -102,7 +102,7 @@
       },
       {
         "period": "2026-05",
-        "train_days": 189,
+        "train_days": 188,
         "experts": [
           "breakout",
           "fno",
@@ -116,7 +116,7 @@
       },
       {
         "period": "2026-06",
-        "train_days": 208,
+        "train_days": 207,
         "experts": [
           "breakout",
           "fno",
@@ -130,7 +130,7 @@
       },
       {
         "period": "2026-07",
-        "train_days": 229,
+        "train_days": 228,
         "experts": [
           "breakout",
           "fno",
@@ -144,7 +144,7 @@
       },
       {
         "period": "2026-08",
-        "train_days": 252,
+        "train_days": 251,
         "experts": [
           "breakout",
           "fno",
@@ -158,7 +158,7 @@
       },
       {
         "period": "2026-09",
-        "train_days": 273,
+        "train_days": 272,
         "experts": [
           "breakout",
           "fno",
@@ -179,7 +179,7 @@
       "net_return_pct": 0.0,
       "trade_count": 0,
       "execution_days": 0,
-      "no_trade_days": 164,
+      "no_trade_days": 163,
       "win_rate": 0.0,
       "profit_factor": 0.0,
       "max_drawdown_pct": 0.0,
@@ -198,7 +198,7 @@
       "net_return_pct": 0.0,
       "trade_count": 0,
       "execution_days": 0,
-      "no_trade_days": 164,
+      "no_trade_days": 163,
       "win_rate": 0.0,
       "profit_factor": 0.0,
       "max_drawdown_pct": 0.0,
@@ -217,7 +217,7 @@
       "net_return_pct": 0.0,
       "trade_count": 0,
       "execution_days": 0,
-      "no_trade_days": 164,
+      "no_trade_days": 163,
       "win_rate": 0.0,
       "profit_factor": 0.0,
       "max_drawdown_pct": 0.0,
@@ -231,5 +231,5 @@
       "regime_results": []
     }
   },
-  "runtime_seconds": 16265.78639779
+  "runtime_seconds": 15427.703952271
 }
