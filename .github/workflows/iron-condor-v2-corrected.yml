@@ -1,0 +1,98 @@
+name: Iron Condor V2 Corrected Research
+
+on:
+  push:
+    branches: [iron-condor-v3-daily-walk-forward]
+    paths:
+      - 'scripts/run_v2_corrected_research.py'
+      - 'config.iron_condor_v2.yaml'
+      - 'scripts/download_nifty_nse_history.py'
+      - '.github/workflows/iron-condor-v2-corrected.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: iron-condor-v2-corrected
+  cancel-in-progress: false
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      PYTHONUNBUFFERED: '1'
+      NSE_HISTORY_START: '2015-01-01'
+      NSE_HISTORY_END: '2026-09-16'
+      NSE_HISTORY_WORKERS: '5'
+    steps:
+      - name: Checkout Surge Identifier V2/V3 research branch
+        uses: actions/checkout@v4
+        with:
+          ref: iron-condor-v3-daily-walk-forward
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Preflight corrected V2
+        run: python -m py_compile scripts/run_v2_corrected_research.py
+
+      - name: Download / refresh full NIFTY history
+        run: python scripts/download_nifty_nse_history.py
+
+      - name: Validate history
+        run: |
+          test -s data/cache/nifty_options_long.parquet
+          test -s data/cache/nifty_futures_long.parquet
+          python - <<'PY'
+          import pandas as pd
+          o=pd.read_parquet('data/cache/nifty_options_long.parquet')
+          f=pd.read_parquet('data/cache/nifty_futures_long.parquet')
+          print('Options:',len(o),o.date.min(),o.date.max(),o.date.nunique())
+          print('Futures:',len(f),f.date.min(),f.date.max(),f.date.nunique())
+          assert o.date.min().year <= 2015 and o.date.max().year >= 2026
+          assert f.date.min().year <= 2015 and f.date.max().year >= 2026
+          assert set(o.option_type.astype(str).str.upper().unique()) == {'CE','PE'}
+          assert (o.close > 0).all() and (f.close > 0).all()
+          PY
+
+      - name: Run corrected V2
+        run: python scripts/run_v2_corrected_research.py
+
+      - name: Validate corrected V2 artifacts
+        run: |
+          test -s backtest/results/iron-condor-v2-corrected/v2_corrected_summary.json
+          test -s backtest/results/iron-condor-v2-corrected/walk_forward_results.csv
+          test -s backtest/results/iron-condor-v2-corrected/walk_forward_trades.csv
+          test -s backtest/results/iron-condor-v2-corrected/baseline_oos_trades.csv
+          test -s backtest/results/iron-condor-v2-corrected/slippage_sensitivity.csv
+          python - <<'PY'
+          import json
+          p='backtest/results/iron-condor-v2-corrected/v2_corrected_summary.json'
+          s=json.load(open(p))
+          assert s['walk_forward_windows'] == 8
+          assert s['walk_forward_oos']['trades'] > 0
+          print(json.dumps({'baseline_70_30':s['baseline_70_30'],'walk_forward_oos':s['walk_forward_oos']},indent=2))
+          PY
+
+      - name: Commit corrected V2 results to Surge Identifier
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add backtest/results/iron-condor-v2-corrected
+          git diff --cached --quiet || git commit -m 'Publish corrected V2 iron condor research'
+          git push origin iron-condor-v3-daily-walk-forward
+
+      - name: Upload corrected V2 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: iron-condor-v2-corrected
+          path: backtest/results/iron-condor-v2-corrected/
+          retention-days: 30
