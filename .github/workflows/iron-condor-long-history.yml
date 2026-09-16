@@ -1,0 +1,92 @@
+name: NIFTY Weekly Iron Condor Long-History Research
+
+on:
+  push:
+    branches: [iron-condor-long-history]
+  workflow_dispatch:
+
+concurrency:
+  group: iron-condor-long-history
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: "1"
+  NSE_HISTORY_START: "2015-01-01"
+  NSE_HISTORY_WORKERS: "5"
+  IRON_CONDOR_DATA_PATH: "data/cache/nifty_options_long.parquet"
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: iron-condor-long-history
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install "numpy>=2.0,<3" "pandas>=2.2,<3" "pyarrow>=17,<23" "requests>=2.32,<3" "scikit-learn>=1.5,<2" "pyyaml>=6,<7" --no-cache-dir
+
+      - name: Download long NIFTY option history from NSE
+        run: |
+          python scripts/download_nifty_nse_history.py
+
+      - name: Validate long-history dataset
+        run: |
+          python - <<'PY'
+          import json
+          import pandas as pd
+          from pathlib import Path
+          p = Path("data/cache/nifty_options_long.parquet")
+          m = json.loads(Path("data/cache/nifty_options_long_manifest.json").read_text())
+          x = pd.read_parquet(p, columns=["date", "expiry", "strike", "option_type", "close"])
+          print("Manifest:", json.dumps(m, indent=2))
+          print("Rows:", len(x))
+          print("Dates:", x.date.min(), "->", x.date.max(), "|", x.date.nunique())
+          print("Option types:", x.option_type.value_counts().to_dict())
+          assert len(x) >= 500000, "Long-history dataset is too small"
+          assert x.date.nunique() >= 1500, "Insufficient long-history trading sessions"
+          assert x.date.min().year <= 2015, "History did not reach the requested start period"
+          assert x.date.max().year >= 2026, "History did not reach the current year"
+          assert set(x.option_type.unique()) == {"CE", "PE"}, "Unexpected option types"
+          assert (x.close > 0).all(), "Non-positive option prices present"
+          PY
+
+      - name: Run 70/30 long-history walk-forward research
+        run: python scripts/run_iron_condor_research.py
+
+      - name: Validate research outputs
+        run: |
+          test -s backtest/results/iron-condor/oos_summary.json
+          test -s backtest/results/iron-condor/training_leaderboard.csv
+          test -s backtest/results/iron-condor/oos_trades.csv
+          test -s backtest/results/iron-condor/oos_year_breakdown.csv
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          s = json.loads(Path("backtest/results/iron-condor/oos_summary.json").read_text())
+          print(json.dumps(s, indent=2))
+          if s.get("data_ok") is not True:
+              raise SystemExit("OOS data_ok is false")
+          if int(s.get("trades", 0)) <= 0:
+              raise SystemExit("No OOS trades")
+          if "compounded_return" not in s:
+              raise SystemExit("Compounded return missing")
+          PY
+
+      - name: Upload full research artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: iron-condor-long-history-${{ github.run_number }}
+          path: |
+            backtest/results/iron-condor/
+            data/cache/nifty_options_long.parquet
+            data/cache/nifty_options_long_manifest.json
+          retention-days: 30
