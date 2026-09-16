@@ -93,6 +93,8 @@ def _finalize(raw: pd.DataFrame, root: Path, start: date, end: date) -> pd.DataF
     raw["date"] = pd.to_datetime(raw["date"], errors="coerce").dt.normalize()
     raw["expiry"] = pd.to_datetime(raw["expiry"], errors="coerce").dt.normalize()
     raw["symbol"] = raw["symbol"].astype(str).str.strip().str.upper()
+    if "instrument" not in raw.columns:
+        raw["instrument"] = "OPTIDX"
     raw["instrument"] = raw["instrument"].astype(str).str.strip().str.upper()
     raw["option_type"] = raw["option_type"].astype(str).str.strip().str.upper().replace({"CALL": "CE", "PUT": "PE"})
     raw = raw.dropna(subset=["date", "expiry", "strike", "close"])
@@ -103,8 +105,6 @@ def _finalize(raw: pd.DataFrame, root: Path, start: date, end: date) -> pd.DataF
         nifty["underlying_close"] = float("nan")
     nifty["underlying_close"] = pd.to_numeric(nifty["underlying_close"], errors="coerce")
 
-    # NSE archive rows need a futures-derived underlying proxy; Kaggle option-chain
-    # rows can already carry a spot/underlying price, which is retained.
     fut = nifty[nifty.instrument.str.contains("FUT", na=False) & nifty.close.notna()].copy()
     if not fut.empty:
         fut["days_to_expiry"] = (fut.expiry - fut.date).dt.days
@@ -134,7 +134,6 @@ def load_nifty_options(cache_dir: str, lookback_days: int = 900) -> pd.DataFrame
     if kaggle_roots:
         try:
             from src.kaggle_options import load_from_kaggle_roots
-
             k = load_from_kaggle_roots(kaggle_roots)
             if not k.empty:
                 k = k[(pd.to_datetime(k.date).dt.date >= start) & (pd.to_datetime(k.date).dt.date <= end)].copy()
@@ -166,9 +165,7 @@ def load_nifty_options(cache_dir: str, lookback_days: int = 900) -> pd.DataFrame
                 x = fut.result()
                 if x is not None:
                     frames.append(x)
-
     if not frames:
         return pd.DataFrame()
-
     raw = pd.concat(frames, ignore_index=True)
     return _finalize(raw, root, start, end)
