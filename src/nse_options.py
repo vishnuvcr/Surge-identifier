@@ -28,11 +28,11 @@ def _parse(content: bytes, dt: date) -> pd.DataFrame:
             raw = pd.read_csv(f)
     raw.columns = [str(c).strip() for c in raw.columns]
     return pd.DataFrame({
-        "date": pd.Timestamp(dt),
+        "date": pd.Timestamp(dt).normalize(),
         "symbol": _pick(raw, "TckrSymb", "SYMBOL").astype(str).str.strip().str.upper(),
         "instrument": _pick(raw, "FinInstrmTp", "INSTRUMENT").astype(str).str.strip().str.upper(),
         "option_type": _pick(raw, "OptnTp", "OPTTYPE").astype(str).str.strip().str.upper(),
-        "expiry": pd.to_datetime(_pick(raw, "XpryDt", "EXPIRYDT"), errors="coerce"),
+        "expiry": pd.to_datetime(_pick(raw, "XpryDt", "EXPIRYDT"), errors="coerce").dt.normalize(),
         "strike": pd.to_numeric(_pick(raw, "StrkPric", "STRIKEPRICE"), errors="coerce"),
         "open": pd.to_numeric(_pick(raw, "OpnPric", "OPENPRICE"), errors="coerce"),
         "high": pd.to_numeric(_pick(raw, "HghPric", "HIGHPRICE"), errors="coerce"),
@@ -84,6 +84,13 @@ def load_nifty_options(cache_dir: str, lookback_days: int = 900) -> pd.DataFrame
         return pd.DataFrame()
     raw = pd.concat(frames, ignore_index=True)
 
+    # Normalize date/expiry after concatenating cached and newly downloaded frames.
+    # Older parquet files can preserve object/string dtypes, which otherwise break
+    # the merge against the freshly parsed datetime64[ns] futures table.
+    raw["date"] = pd.to_datetime(raw["date"], errors="coerce").dt.normalize()
+    raw["expiry"] = pd.to_datetime(raw["expiry"], errors="coerce").dt.normalize()
+    raw = raw.dropna(subset=["date", "symbol"])
+
     # Keep both NIFTY options and the nearest available NIFTY futures close as an underlying proxy.
     nifty = raw[raw["symbol"] == "NIFTY"].copy()
     fut = nifty[nifty["instrument"].str.contains("FUT", na=False) & nifty["close"].notna()].copy()
@@ -92,13 +99,14 @@ def load_nifty_options(cache_dir: str, lookback_days: int = 900) -> pd.DataFrame
         fut = fut[fut["days_to_expiry"] >= 0]
         fut = fut.sort_values(["date", "days_to_expiry"])
         fut_daily = fut.groupby("date", as_index=False).first()[["date", "close"]].rename(columns={"close": "underlying_close"})
+        fut_daily["date"] = pd.to_datetime(fut_daily["date"], errors="coerce").dt.normalize()
     else:
-        fut_daily = pd.DataFrame(columns=["date", "underlying_close"])
+        fut_daily = pd.DataFrame({"date": pd.Series([], dtype="datetime64[ns]"), "underlying_close": pd.Series([], dtype=float)})
 
     opt = nifty[nifty["instrument"].str.contains("OPT", na=False)].copy()
     opt = opt[opt["option_type"].isin(["CE", "PE", "CALL", "PUT"])]
     opt["option_type"] = opt["option_type"].replace({"CALL": "CE", "PUT": "PE"})
-    opt = opt.merge(fut_daily, on="date", how="left")
+    opt = opt.merge(fut_daily, on="date", how="left", validate="many_to_one")
     opt = opt.drop_duplicates(subset=["date", "expiry", "strike", "option_type"], keep="last")
     opt = opt.sort_values(["date", "expiry", "strike", "option_type"])
     opt.to_parquet(parquet, index=False)
