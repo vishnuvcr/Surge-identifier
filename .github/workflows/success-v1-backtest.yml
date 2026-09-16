@@ -1,0 +1,69 @@
+name: Success V1 NIFTY Iron Condor Long-History Backtest
+
+on:
+  push:
+    branches: [success-v1-iron-condor]
+  workflow_dispatch:
+
+concurrency:
+  group: success-v1-backtest
+  cancel-in-progress: true
+
+env:
+  PYTHONUNBUFFERED: "1"
+  NSE_HISTORY_START: "2015-01-01"
+  NSE_HISTORY_WORKERS: "5"
+  IRON_CONDOR_DATA_PATH: data/cache/nifty_options_long.parquet
+  IRON_CONDOR_FUTURES_PATH: data/cache/nifty_futures_long.parquet
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: success-v1-iron-condor
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install "numpy>=2.0,<3" "pandas>=2.2,<3" "pyarrow>=17,<23" "requests>=2.32,<3" "pyyaml>=6,<7" --no-cache-dir
+
+      - name: Download long NIFTY option and futures history from NSE
+        run: python scripts/download_nifty_nse_history.py
+
+      - name: Run corrected 70/30 Success V1 backtest
+        run: python scripts/run_success_v1_backtest.py
+
+      - name: Validate outputs
+        run: |
+          test -s backtest/results/success-v1/oos_summary.json
+          test -s backtest/results/success-v1/training_leaderboard.csv
+          test -s backtest/results/success-v1/oos_trades.csv
+          test -s backtest/results/success-v1/oos_year_breakdown.csv
+          test -s backtest/results/success-v1/tp_sl_behavior_audit.csv
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          s = json.loads(Path("backtest/results/success-v1/oos_summary.json").read_text())
+          print(json.dumps(s, indent=2))
+          assert s.get("data_ok") is True
+          assert int(s.get("trades", 0)) > 0
+          assert s.get("paper_candidate_matches_selected") is True, "Checked-in paper candidate does not match training-selected parameters"
+          PY
+
+      - name: Upload Success V1 research artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: success-v1-corrected-${{ github.run_number }}
+          path: |
+            backtest/results/success-v1/
+            data/cache/nifty_options_long_manifest.json
+          retention-days: 30
