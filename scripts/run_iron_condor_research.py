@@ -28,14 +28,21 @@ def main():
     cfg = yaml.safe_load(Path("config/iron_condor.yaml").read_text())
     out = Path("backtest/results/iron-condor")
     out.mkdir(parents=True, exist_ok=True)
-    data = load_nifty_options("data/cache", lookback_days=600)
+    data = load_nifty_options("data/cache", lookback_days=2500)
     if data.empty:
-        raise RuntimeError("No NIFTY option data downloaded")
+        raise RuntimeError("No NIFTY option data loaded")
+    data["date"] = pd.to_datetime(data["date"]).dt.normalize()
+    data["expiry"] = pd.to_datetime(data["expiry"]).dt.normalize()
+    data = data.sort_values(["date", "expiry", "strike", "option_type"]).reset_index(drop=True)
     data.to_parquet("data/cache/nifty_options.parquet", index=False)
-    dates = sorted(pd.to_datetime(data.date).dt.normalize().unique())
-    split = dates[max(1, int(len(dates) * .70))]
-    train = data[data.date < split]
-    test = data[data.date >= split]
+
+    dates = sorted(data.date.unique())
+    split_index = max(1, int(len(dates) * .70))
+    split = pd.Timestamp(dates[split_index])
+    train = data[data.date < split].copy()
+    test = data[data.date >= split].copy()
+    print(f"Dataset: {len(data):,} rows, {len(dates):,} dates, {data.date.min().date()} -> {data.date.max().date()}")
+    print(f"70/30 split: {split.date()} | train={train.date.min().date()}->{train.date.max().date()} | oos={test.date.min().date()}->{test.date.max().date()}")
 
     rows = []
     best = None
@@ -51,7 +58,7 @@ def main():
         raise RuntimeError("No viable iron condor configuration in training period")
 
     _, oos = backtest(test, best)
-    oos.update({"split_date": str(split.date()), "selected_parameters": best})
+    oos.update({"split_date": str(split.date()), "selected_parameters": best, "dataset_start": str(data.date.min().date()), "dataset_end": str(data.date.max().date())})
     leaderboard = pd.DataFrame(rows).sort_values("train_score", ascending=False)
     leaderboard.to_csv(out / "training_leaderboard.csv", index=False)
     (out / "oos_summary.json").write_text(json.dumps(oos, indent=2, default=str))
