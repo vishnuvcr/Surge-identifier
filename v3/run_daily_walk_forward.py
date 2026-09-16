@@ -5,7 +5,6 @@ import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 import numpy as np
 import pandas as pd
@@ -26,7 +25,6 @@ class CostModel:
     gst_pct: float = 0.18
 
     def total(self, legs, lot: int) -> float:
-        # Four-leg entry + four-leg exit = 8 orders.
         brokerage = 8.0 * self.brokerage_per_order
         sell_value = sum(entry if side < 0 else exit for entry, exit, side in legs) * lot
         buy_value = sum(entry if side > 0 else exit for entry, exit, side in legs) * lot
@@ -41,7 +39,6 @@ class CostModel:
 
 def lot_size_for_expiry(expiry: pd.Timestamp) -> int:
     e = pd.Timestamp(expiry).normalize()
-    # Historical NIFTY lot-size changes used in the prior research line.
     if e < pd.Timestamp("2015-10-30"):
         return 25
     if e < pd.Timestamp("2021-08-01"):
@@ -141,6 +138,7 @@ class Market:
         vals = [self.price(day, expiry, k, typ, "close") for k, typ in legs]
         if any(v is None for v in vals):
             return None
+        # Positive mark is the current liability/value of the short condor.
         return vals[1] + vals[2] - vals[0] - vals[3]
 
     def conservative_bound(self, day, expiry, legs):
@@ -148,9 +146,9 @@ class Market:
         highs = [self.price(day, expiry, k, typ, "high") for k, typ in legs]
         if any(v is None for v in lows + highs):
             return None
-        # Most-adverse leg-wise combination. This is a risk bound, not a realizable
-        # path or proof that every extreme occurred simultaneously.
-        return lows[1] + lows[2] - highs[0] - highs[3]
+        # Maximum adverse condor mark: high shorts minus low long wings.
+        # This is a leg-wise risk bound, not a realizable path/fill assertion.
+        return highs[1] + highs[2] - lows[0] - lows[3]
 
 
 def config_grid():
@@ -249,9 +247,9 @@ def simulate_config(market: Market, params: dict, start: pd.Timestamp, end: pd.T
         minimum_bound_day = None
 
         for day in hold_days:
-            bound = market.conservative_bound(day, expiry, leg_keys)
-            if bound is not None:
-                bound_pnl_points = effective_credit + bound - 4.0 * slippage_per_leg
+            adverse_mark = market.conservative_bound(day, expiry, leg_keys)
+            if adverse_mark is not None:
+                bound_pnl_points = effective_credit - adverse_mark - 4.0 * slippage_per_leg
                 if math.isnan(minimum_bound) or bound_pnl_points < minimum_bound:
                     minimum_bound = bound_pnl_points
                     minimum_bound_day = day
@@ -259,7 +257,7 @@ def simulate_config(market: Market, params: dict, start: pd.Timestamp, end: pd.T
             mark = market.mark(day, expiry, leg_keys)
             if mark is None:
                 continue
-            pnl_points = effective_credit + mark - 4.0 * slippage_per_leg
+            pnl_points = effective_credit - mark - 4.0 * slippage_per_leg
             target_pnl_points = params["take_profit"] * effective_credit
             stop_pnl_points = -params["stop_loss"] * effective_credit
             if pnl_points >= target_pnl_points:
@@ -278,8 +276,6 @@ def simulate_config(market: Market, params: dict, start: pd.Timestamp, end: pd.T
                 decisions.append(row)
                 continue
 
-        # A test-window trade must settle within the test window. Otherwise it would
-        # leak information from the next walk-forward window.
         if exit_date > end:
             row["reason"] = "CROSSES_TEST_WINDOW"
             decisions.append(row)
@@ -300,7 +296,9 @@ def simulate_config(market: Market, params: dict, start: pd.Timestamp, end: pd.T
             ],
             lot,
         )
-        gross_points = effective_credit + exit_mark - 4.0 * slippage_per_leg
+        # Short-condor P&L = entry credit - exit condor mark.
+        # Entry and exit slippage are both charged per leg.
+        gross_points = effective_credit - exit_mark - 4.0 * slippage_per_leg
         gross_pnl = gross_points * lot
         net_pnl = gross_pnl - cost
 
@@ -487,7 +485,6 @@ def main():
         )
 
     dataset_start, dataset_end = market.dates[0], market.dates[-1]
-    min_train_start = dataset_start
     session_index = {d: i for i, d in enumerate(market.dates)}
 
     all_oos_decisions = []
@@ -496,7 +493,6 @@ def main():
     leaderboards = []
 
     for window_name, test_start, test_end in window_specs(dataset_end):
-        # Expanding training: the training end is the session immediately before the test start.
         test_dates = [d for d in market.dates if test_start <= d <= test_end]
         if not test_dates:
             continue
@@ -508,8 +504,6 @@ def main():
                 f"minimum training history: available_before_test={idx}, "
                 f"minimum_training_sessions={minimum_training_sessions}"
             )
-        # True expanding walk-forward: the training start remains fixed at the
-        # first synchronized historical session while the training end advances.
         train_start = dataset_start
         train_end = market.dates[idx - 1]
 
@@ -559,7 +553,6 @@ def main():
 
     stress_rows = []
     final_params = window_records[-1]["selected_parameters"]
-    # Stress each walk-forward window with the same selected parameters and varying execution slippage.
     for slip in CFG["stress_slippage_per_leg_points"]:
         stress_trades = []
         for wr in window_records:
