@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import re
 import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -22,25 +23,29 @@ def _pick(raw: pd.DataFrame, *names):
     return pd.Series(index=raw.index, dtype=float)
 
 
-def _parse(content: bytes, dt: date) -> pd.DataFrame:
+def _parse(content: bytes, dt: date | None = None) -> pd.DataFrame:
     with zipfile.ZipFile(io.BytesIO(content)) as zf:
         with zf.open(zf.namelist()[0]) as f:
             raw = pd.read_csv(f)
     raw.columns = [str(c).strip() for c in raw.columns]
+    trade_date = _pick(raw, "TradDt", "TIMESTAMP", "Trade_Date")
+    parsed_date = pd.to_datetime(trade_date, errors="coerce").dt.normalize()
+    if dt is not None:
+        parsed_date = parsed_date.fillna(pd.Timestamp(dt).normalize())
     return pd.DataFrame({
-        "date": pd.Timestamp(dt).normalize(),
+        "date": parsed_date,
         "symbol": _pick(raw, "TckrSymb", "SYMBOL").astype(str).str.strip().str.upper(),
-        "instrument": _pick(raw, "FinInstrmTp", "INSTRUMENT").astype(str).str.strip().str.upper(),
-        "option_type": _pick(raw, "OptnTp", "OPTTYPE").astype(str).str.strip().str.upper(),
-        "expiry": pd.to_datetime(_pick(raw, "XpryDt", "EXPIRYDT"), errors="coerce").dt.normalize(),
-        "strike": pd.to_numeric(_pick(raw, "StrkPric", "STRIKEPRICE"), errors="coerce"),
-        "open": pd.to_numeric(_pick(raw, "OpnPric", "OPENPRICE"), errors="coerce"),
-        "high": pd.to_numeric(_pick(raw, "HghPric", "HIGHPRICE"), errors="coerce"),
-        "low": pd.to_numeric(_pick(raw, "LwPric", "LOWPRICE"), errors="coerce"),
-        "close": pd.to_numeric(_pick(raw, "ClsPric", "CLSPRIC", "CLOSEPRICE"), errors="coerce"),
-        "settlement": pd.to_numeric(_pick(raw, "SttlmPric", "SETTLEPRICE"), errors="coerce"),
-        "volume": pd.to_numeric(_pick(raw, "TtlTradgVol", "CONTRACTS"), errors="coerce").fillna(0),
-        "oi": pd.to_numeric(_pick(raw, "OpnIntrst", "OPENINT"), errors="coerce").fillna(0),
+        "instrument": _pick(raw, "FinInstrmTp", "INSTRUMENT", "INSTRUMENT_TYPE").astype(str).str.strip().str.upper(),
+        "option_type": _pick(raw, "OptnTp", "OPTTYPE", "OPTION_TYP").astype(str).str.strip().str.upper(),
+        "expiry": pd.to_datetime(_pick(raw, "XpryDt", "EXPIRYDT", "EXPIRY_DT"), errors="coerce").dt.normalize(),
+        "strike": pd.to_numeric(_pick(raw, "StrkPric", "STRIKEPRICE", "STRIKE_PR"), errors="coerce"),
+        "open": pd.to_numeric(_pick(raw, "OpnPric", "OPENPRICE", "OPEN"), errors="coerce"),
+        "high": pd.to_numeric(_pick(raw, "HghPric", "HIGHPRICE", "HIGH"), errors="coerce"),
+        "low": pd.to_numeric(_pick(raw, "LwPric", "LOWPRICE", "LOW"), errors="coerce"),
+        "close": pd.to_numeric(_pick(raw, "ClsPric", "CLSPRIC", "CLOSEPRICE", "CLOSE"), errors="coerce"),
+        "settlement": pd.to_numeric(_pick(raw, "SttlmPric", "SETTLEPRICE", "SETTLE_PR"), errors="coerce"),
+        "volume": pd.to_numeric(_pick(raw, "TtlTradgVol", "CONTRACTS", "TOTTRDQTY"), errors="coerce").fillna(0),
+        "oi": pd.to_numeric(_pick(raw, "OpnIntrst", "OPENINT", "OPEN_INT"), errors="coerce").fillna(0),
     })
 
 
@@ -50,62 +55,95 @@ def _download(dt: date, raw_dir: Path):
     try:
         if fp.exists():
             return _parse(fp.read_bytes(), dt)
-        r = requests.get(BASE.format(ymd=dt.strftime("%Y%m%d")), headers={"User-Agent": UA}, timeout=40)
-        if r.ok and r.content[:2] == b"PK":
-            fp.write_bytes(r.content)
-            return _parse(r.content, dt)
+        # NSE's official UDiFF endpoint.  The workflow also has a GitHub-hosted
+        # validated archive fallback because GitHub runners can intermittently be
+        # unable to reach nsearchives.nseindia.com.
+        for host in ("https://archives.nseindia.com", "https://nsearchives.nseindia.com"):
+            url = f"{host}/content/fo/BhavCopy_NSE_FO_0_0_0_{dt:%Y%m%d}_F_0000.csv.zip"
+            r = requests.get(url, headers={"User-Agent": UA}, timeout=40)
+            if r.ok and r.content[:2] == b"PK":
+                fp.write_bytes(r.content)
+                return _parse(r.content, dt)
     except Exception:
         pass
     time.sleep(0.4)
     return None
 
 
+def _parse_external_archives(archive_root: Path, start: date, end: date) -> list[pd.DataFrame]:
+    """Read a prevalidated NSE F&O archive mirror checked out by the CI workflow."""
+    frames: list[pd.DataFrame] = []
+    for fp in sorted(archive_root.glob("data/20{25,26}/**/*.zip")):
+        m = re.search(r"(\d{8})", fp.name)
+        if not m:
+            continue
+        try:
+            dt = datetime.strptime(m.group(1), "%Y%m%d").date()
+        except ValueError:
+            continue
+        if not (start <= dt <= end):
+            continue
+        try:
+            frames.append(_parse(fp.read_bytes(), dt))
+        except Exception:
+            continue
+    return frames
+
+
 def load_nifty_options(cache_dir: str, lookback_days: int = 900) -> pd.DataFrame:
     root = Path(cache_dir)
-    raw_dir = root / "fo_raw"
     parquet = root / "nifty_options.parquet"
     end = datetime.now(IST).date()
-    dates = [end - timedelta(days=i) for i in range(lookback_days, -1, -1) if (end - timedelta(days=i)).weekday() < 5]
-    frames = []
-    existing = set()
+    start = end - timedelta(days=lookback_days)
+
+    frames: list[pd.DataFrame] = []
     if parquet.exists():
         old = pd.read_parquet(parquet)
         if not old.empty:
-            frames.append(old)
-            existing = set(pd.to_datetime(old["date"]).dt.date.unique())
-    needed = [d for d in dates if d not in existing]
-    with ThreadPoolExecutor(max_workers=8) as ex:
-        futures = [ex.submit(_download, d, raw_dir) for d in needed]
-        for fut in as_completed(futures):
-            x = fut.result()
-            if x is not None:
-                frames.append(x)
+            old["date"] = pd.to_datetime(old["date"], errors="coerce").dt.normalize()
+            old["expiry"] = pd.to_datetime(old["expiry"], errors="coerce").dt.normalize()
+            frames.append(old[(old.date.dt.date >= start) & (old.date.dt.date <= end)])
+
+    # Preferred CI path: use the validated public archive mirror rather than
+    # depending on NSE's website being reachable from a GitHub-hosted runner.
+    external = Path("/tmp/nse-fno-data-bank")
+    if external.exists():
+        frames.extend(_parse_external_archives(external, start, end))
+
+    # If the external mirror is unavailable, fall back to direct NSE downloads.
+    if not frames:
+        raw_dir = root / "fo_raw"
+        dates = [end - timedelta(days=i) for i in range(lookback_days, -1, -1) if (end - timedelta(days=i)).weekday() < 5]
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            futures = [ex.submit(_download, d, raw_dir) for d in dates]
+            for fut in as_completed(futures):
+                x = fut.result()
+                if x is not None:
+                    frames.append(x)
+
     if not frames:
         return pd.DataFrame()
-    raw = pd.concat(frames, ignore_index=True)
 
-    # Normalize date/expiry after concatenating cached and newly downloaded frames.
-    # Older parquet files can preserve object/string dtypes, which otherwise break
-    # the merge against the freshly parsed datetime64[ns] futures table.
+    raw = pd.concat(frames, ignore_index=True)
     raw["date"] = pd.to_datetime(raw["date"], errors="coerce").dt.normalize()
     raw["expiry"] = pd.to_datetime(raw["expiry"], errors="coerce").dt.normalize()
-    raw = raw.dropna(subset=["date", "symbol"])
+    raw["symbol"] = raw["symbol"].astype(str).str.strip().str.upper()
+    raw["instrument"] = raw["instrument"].astype(str).str.strip().str.upper()
+    raw["option_type"] = raw["option_type"].astype(str).str.strip().str.upper().replace({"CALL": "CE", "PUT": "PE"})
+    raw = raw.dropna(subset=["date", "expiry", "strike", "close"])
+    raw = raw[(raw.date.dt.date >= start) & (raw.date.dt.date <= end)]
 
-    # Keep both NIFTY options and the nearest available NIFTY futures close as an underlying proxy.
-    nifty = raw[raw["symbol"] == "NIFTY"].copy()
-    fut = nifty[nifty["instrument"].str.contains("FUT", na=False) & nifty["close"].notna()].copy()
+    nifty = raw[raw.symbol == "NIFTY"].copy()
+    fut = nifty[nifty.instrument.str.contains("FUT", na=False) & nifty.close.notna()].copy()
     if not fut.empty:
-        fut["days_to_expiry"] = (fut["expiry"] - fut["date"]).dt.days
-        fut = fut[fut["days_to_expiry"] >= 0]
-        fut = fut.sort_values(["date", "days_to_expiry"])
+        fut["days_to_expiry"] = (fut.expiry - fut.date).dt.days
+        fut = fut[fut.days_to_expiry >= 0].sort_values(["date", "days_to_expiry"])
         fut_daily = fut.groupby("date", as_index=False).first()[["date", "close"]].rename(columns={"close": "underlying_close"})
-        fut_daily["date"] = pd.to_datetime(fut_daily["date"], errors="coerce").dt.normalize()
     else:
         fut_daily = pd.DataFrame({"date": pd.Series([], dtype="datetime64[ns]"), "underlying_close": pd.Series([], dtype=float)})
 
-    opt = nifty[nifty["instrument"].str.contains("OPT", na=False)].copy()
-    opt = opt[opt["option_type"].isin(["CE", "PE", "CALL", "PUT"])]
-    opt["option_type"] = opt["option_type"].replace({"CALL": "CE", "PUT": "PE"})
+    opt = nifty[nifty.instrument.str.contains("OPT", na=False)].copy()
+    opt = opt[opt.option_type.isin(["CE", "PE"])]
     opt = opt.merge(fut_daily, on="date", how="left", validate="many_to_one")
     opt = opt.drop_duplicates(subset=["date", "expiry", "strike", "option_type"], keep="last")
     opt = opt.sort_values(["date", "expiry", "strike", "option_type"])
