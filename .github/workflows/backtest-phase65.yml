@@ -71,10 +71,10 @@ jobs:
           path = Path('src/moe_engine_phase65.py')
           text = path.read_text()
           replacements = {
-              'short_hit_025': 'short_hit_2p5',
-              'long_hit_025': 'long_hit_2p5',
-              'short_hit_p025': 'short_hit_2p5',
-              'long_hit_p025': 'long_hit_2p5',
+              'short_hit_025': 'short_hit_p025',
+              'long_hit_025': 'long_hit_p025',
+              'short_hit_2p5': 'short_hit_p025',
+              'long_hit_2p5': 'long_hit_p025',
           }
           before = text
           for old, new in replacements.items():
@@ -87,8 +87,10 @@ jobs:
           text = Path('src/moe_engine_phase65.py').read_text()
           assert 'short_hit_025' not in text
           assert 'long_hit_025' not in text
-          assert 'short_hit_p025' not in text
-          assert 'long_hit_p025' not in text
+          assert 'short_hit_2p5' not in text
+          assert 'long_hit_2p5' not in text
+          assert 'short_hit_p025' in text
+          assert 'long_hit_p025' in text
           print('Phase 6.5 target-key compatibility check passed')
           PY
       - name: Run Phase 6.5 bidirectional adaptive MoE
