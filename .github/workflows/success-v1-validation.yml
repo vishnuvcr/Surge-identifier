@@ -1,0 +1,87 @@
+name: Success V1 Iron Condor Validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: "NSE history start date"
+        required: false
+        default: "2015-01-01"
+      workers:
+        description: "Parallel NSE download workers"
+        required: false
+        default: "5"
+
+concurrency:
+  group: success-v1-validation
+  cancel-in-progress: false
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      PYTHONUNBUFFERED: "1"
+      NSE_HISTORY_START: ${{ inputs.start_date || '2015-01-01' }}
+      NSE_HISTORY_WORKERS: ${{ inputs.workers || '5' }}
+      IRON_CONDOR_DATA_PATH: data/cache/nifty_options_long.parquet
+      IRON_CONDOR_FUTURES_PATH: data/cache/nifty_futures_long.parquet
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: success-v1-iron-condor
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install "numpy>=2.0,<3" "pandas>=2.2,<3" "pyarrow>=17,<23" "requests>=2.32,<3" "scikit-learn>=1.5,<2" "pyyaml>=6,<7"
+      - name: Download full NSE history
+        run: python scripts/download_nifty_nse_history.py
+      - name: Validate options and futures history
+        run: |
+          python - <<'PY'
+          import pandas as pd
+          o = pd.read_parquet('data/cache/nifty_options_long.parquet', columns=['date','option_type','close'])
+          f = pd.read_parquet('data/cache/nifty_futures_long.parquet', columns=['date','expiry','close'])
+          print('options', len(o), o.date.min(), o.date.max(), o.date.nunique(), o.option_type.value_counts().to_dict())
+          print('futures', len(f), f.date.min(), f.date.max(), f.date.nunique())
+          assert len(o) >= 500000
+          assert o.date.nunique() >= 1500
+          assert o.date.min().year <= 2015
+          assert o.date.max().year >= 2026
+          assert f.date.nunique() >= 1500
+          assert f.date.min().year <= 2015
+          assert f.date.max().year >= 2026
+          assert set(o.option_type.unique()) == {'CE','PE'}
+          assert (o.close > 0).all()
+          assert (f.close > 0).all()
+          PY
+      - name: Run corrected 70/30 Success V1 research
+        run: python scripts/run_success_v1_research.py
+      - name: Validate research outputs
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          out = Path('backtest/results/success-v1')
+          for name in ['oos_summary.json','training_leaderboard.csv','oos_trades.csv','oos_year_breakdown.csv','tp_sl_behavior_audit.csv','backtest_audit.json']:
+              assert (out/name).exists(), name
+          s = json.loads((out/'oos_summary.json').read_text())
+          print(json.dumps(s, indent=2))
+          assert s['trades'] > 0
+          assert 'theoretical_compounded_return' in s
+          assert 'fixed_lot_max_drawdown' in s
+          PY
+      - name: Upload corrected research artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: success-v1-validation-${{ github.run_number }}
+          path: |
+            backtest/results/success-v1/
+            data/cache/nifty_options_long_manifest.json
+            data/cache/nifty_options_long.parquet
+            data/cache/nifty_futures_long.parquet
+          retention-days: 30
