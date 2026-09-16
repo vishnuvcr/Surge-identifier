@@ -140,9 +140,15 @@ def main():
         write_outputs(call, status)
         return
 
-    # New entries are generated only from a Tuesday session.
-    if latest_date.weekday() != cfg["entry_weekday"]:
-        call = {"generated_at_ist": generated, "data_date": str(latest_date.date()), "message": "NO NEW ENTRY: latest available NSE session is not Tuesday."}
+    entry_weekday = int(cfg["entry_weekday"])
+    weekday_name = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][entry_weekday]
+    if latest_date.weekday() != entry_weekday:
+        call = {
+            "generated_at_ist": generated,
+            "data_date": str(latest_date.date()),
+            "entry_weekday": entry_weekday,
+            "message": f"NO NEW ENTRY: latest available NSE session is not {weekday_name}.",
+        }
         write_outputs(call, "NO_NEW_ENTRY")
         print(json.dumps({"status":"NO_NEW_ENTRY", **call}, indent=2))
         return
@@ -151,7 +157,7 @@ def main():
     market = prepare_market(options)
     expiry = next((x for x in market.expiries_by_date.get(latest_date, ()) if cfg["min_days_to_expiry"] <= (x-latest_date).days <= cfg["max_days_to_expiry"]), None)
     if expiry is None:
-        raise RuntimeError("No eligible NIFTY expiry in configured 1-7 DTE window")
+        raise RuntimeError(f"No eligible NIFTY expiry in configured {cfg['min_days_to_expiry']}-{cfg['max_days_to_expiry']} DTE window")
     strikes = choose(market, latest_date, expiry, cfg["selected_distance"], cfg["selected_wing_width"])
     if strikes is None:
         raise RuntimeError("Could not construct the configured iron condor from the latest NSE option chain")
