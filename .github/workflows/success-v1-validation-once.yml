@@ -1,0 +1,61 @@
+name: Success V1 Corrected Validation Once
+
+on:
+  push:
+    branches: [success-v1-iron-condor]
+    paths:
+      - 'src/iron_condor_engine_v1.py'
+      - 'scripts/run_success_v1_research.py'
+      - 'config/success_v1.yaml'
+      - '.github/workflows/success-v1-validation-once.yml'
+
+concurrency:
+  group: success-v1-validation-once
+  cancel-in-progress: false
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      PYTHONUNBUFFERED: '1'
+      NSE_HISTORY_START: '2015-01-01'
+      NSE_HISTORY_WORKERS: '5'
+      IRON_CONDOR_DATA_PATH: data/cache/nifty_options_long.parquet
+      IRON_CONDOR_FUTURES_PATH: data/cache/nifty_futures_long.parquet
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: success-v1-iron-condor
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install 'numpy>=2.0,<3' 'pandas>=2.2,<3' 'pyarrow>=17,<23' 'requests>=2.32,<3' 'pyyaml>=6,<7'
+      - name: Download NSE history
+        run: python scripts/download_nifty_nse_history.py
+      - name: Run corrected research
+        run: python scripts/run_success_v1_research.py
+      - name: Validate outputs
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('backtest/results/success-v1/oos_summary.json')
+          s = json.loads(p.read_text())
+          assert s['trades'] > 0
+          assert 'theoretical_compounded_return' in s
+          assert 'fixed_lot_max_drawdown' in s
+          print(json.dumps(s, indent=2))
+          PY
+      - name: Upload Success V1 corrected results
+        uses: actions/upload-artifact@v4
+        with:
+          name: success-v1-corrected-${{ github.run_number }}
+          path: |
+            backtest/results/success-v1/
+            data/cache/nifty_options_long_manifest.json
+          retention-days: 30
