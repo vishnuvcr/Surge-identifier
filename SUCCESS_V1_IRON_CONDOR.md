@@ -13,16 +13,17 @@ This branch is an isolated research and prospective paper-testing system for a w
 - Historical lot size is selected by expiry vintage
 - EOD option closes are used for fills; daily OHLC is used only as a conservative intraday path-risk flag
 - Fixed-lot cumulative equity and a separate theoretical per-trade compounded equity curve are both reported
+- Python `weekday()` convention is explicit: Tuesday = `1`
 
-The corrected engine intentionally does not call fixed-lot cumulative P&L a compounded return. The theoretical compounded curve assumes the same percentage return is re-sized after every trade and is therefore a sensitivity metric, not a live-trading guarantee.
+The corrected engine reads the entry weekday and expiry DTE window from configuration rather than silently hard-coding them. The theoretical compounded curve assumes percentage re-sizing after every trade and is therefore a sensitivity metric, not a live-trading guarantee.
 
 ## Candidate paper configuration
 
 - Short-strike distance: 1.25%
-- Wing width: 200 points
+- Wing width: 250 points
 - Take profit: 40% of initial credit retained as profit
 - Stop loss: 1.0 × initial credit loss
-- One lot for the initial prospective test
+- One market lot for the initial prospective test
 - Maximum one trade per week
 
 ## Prospective paper calls
@@ -34,7 +35,7 @@ Run **Actions → Success V1 NIFTY Iron Condor Paper Call → Run workflow** aft
 - `signals/open_trade.json` — currently tracked model position
 - `signals/trade_history.csv` — model exit journal
 
-Each call contains underlying proxy, expiry/DTE, all four strikes, all four reference premiums, lot size, entry credit, credit value, target/stop close debit, breakevens, maximum expiry loss, estimated entry-side costs, target and stop P&L, and status.
+Each call contains the underlying proxy, expiry/DTE, all four strikes, all four reference premiums, applicable market lot size, entry credit, credit value, target/stop close debit, breakevens, maximum expiry loss, estimated entry-side costs, target and stop P&L, modeled returns, and status.
 
 ## Prospective validation rule
 
