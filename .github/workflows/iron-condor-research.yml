@@ -34,34 +34,51 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Fetch validated NSE F&O archive mirror
         run: |
-          rm -rf /tmp/nse-fno-data-bank
-          git clone --filter=blob:none --no-checkout --depth=1 https://github.com/SantoshSrinivas79/NSE-FNO-Data-bank.git /tmp/nse-fno-data-bank
-          cd /tmp/nse-fno-data-bank
-          git sparse-checkout init --cone
-          git sparse-checkout set data/2025 data/2026
-          git checkout
-          echo "Archive count: $(find data/2025 data/2026 -type f -name '*.zip' | wc -l)"
-          test "$(find data/2025 data/2026 -type f -name '*.zip' | wc -l)" -gt 300
+          pip install -r requirements.txt
+          pip install kagglehub
 
-      - name: Build NIFTY option dataset
+      - name: Download public Kaggle NIFTY datasets
+        run: |
+          python - <<'PY'
+          import kagglehub
+          from pathlib import Path
+
+          datasets = [
+              "ayushsacri/indian-nifty-and-banknifty-options-data-2020-2024",
+              "pariminikhil/nifty-option-chain-3-oct-24-to-24-mar-26",
+          ]
+          roots = []
+          for ds in datasets:
+              p = Path(kagglehub.dataset_download(ds))
+              print(f"{ds} -> {p}")
+              if not p.exists():
+                  raise RuntimeError(f"Dataset path does not exist: {p}")
+              roots.append(str(p))
+          Path("/tmp/kaggle_roots.txt").write_text(":".join(roots))
+          print("Kaggle roots:", roots)
+          PY
+          echo "KAGGLE_DATASET_ROOTS=$(cat /tmp/kaggle_roots.txt)" >> "$GITHUB_ENV"
+
+      - name: Build combined NIFTY option dataset
         run: |
           python - <<'PY'
           from src.nse_options import load_nifty_options
-          x = load_nifty_options('data/cache', lookback_days=600)
+          x = load_nifty_options('data/cache', lookback_days=2500)
           print('rows=', len(x))
           print('dates=', x['date'].min(), 'to', x['date'].max())
+          print('trading_days=', x['date'].nunique())
+          print('expiries=', x['expiry'].nunique())
           print('contracts=', x[['expiry','strike','option_type']].drop_duplicates().shape[0])
           print('option_rows=', len(x[x['option_type'].isin(['CE','PE'])]))
-          assert len(x) > 10000, 'Insufficient NIFTY option history after archive parsing'
-          assert x['date'].nunique() > 200, 'Insufficient trading-day coverage'
-          assert x['underlying_close'].notna().mean() > 0.95, 'Missing NIFTY futures underlying proxy'
+          print('underlying_coverage=', x['underlying_close'].notna().mean())
+          assert len(x) > 100000, 'Insufficient combined NIFTY option history'
+          assert x['date'].nunique() > 700, 'Insufficient trading-day coverage'
+          assert x['underlying_close'].notna().mean() > 0.95, 'Missing NIFTY underlying proxy'
+          assert x['date'].max().year >= 2026, 'Recent Kaggle option dataset not loaded'
           PY
 
-      - name: Run walk-forward iron condor research
+      - name: Run 70/30 walk-forward iron condor research
         run: python scripts/run_iron_condor_research.py
 
       - name: Validate research artifacts
