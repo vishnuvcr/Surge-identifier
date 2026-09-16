@@ -89,6 +89,7 @@ def _parse_external_archives(archive_root: Path, start: date, end: date) -> list
 
 
 def _finalize(raw: pd.DataFrame, root: Path, start: date, end: date) -> pd.DataFrame:
+    raw = raw.copy()
     raw["date"] = pd.to_datetime(raw["date"], errors="coerce").dt.normalize()
     raw["expiry"] = pd.to_datetime(raw["expiry"], errors="coerce").dt.normalize()
     raw["symbol"] = raw["symbol"].astype(str).str.strip().str.upper()
@@ -98,17 +99,23 @@ def _finalize(raw: pd.DataFrame, root: Path, start: date, end: date) -> pd.DataF
     raw = raw[(raw.date.dt.date >= start) & (raw.date.dt.date <= end)]
 
     nifty = raw[raw.symbol == "NIFTY"].copy()
+    if "underlying_close" not in nifty.columns:
+        nifty["underlying_close"] = float("nan")
+    nifty["underlying_close"] = pd.to_numeric(nifty["underlying_close"], errors="coerce")
+
+    # NSE archive rows need a futures-derived underlying proxy; Kaggle option-chain
+    # rows can already carry a spot/underlying price, which is retained.
     fut = nifty[nifty.instrument.str.contains("FUT", na=False) & nifty.close.notna()].copy()
     if not fut.empty:
         fut["days_to_expiry"] = (fut.expiry - fut.date).dt.days
         fut = fut[fut.days_to_expiry >= 0].sort_values(["date", "days_to_expiry"])
-        fut_daily = fut.groupby("date", as_index=False).first()[["date", "close"]].rename(columns={"close": "underlying_close"})
-    else:
-        fut_daily = pd.DataFrame({"date": pd.Series([], dtype="datetime64[ns]"), "underlying_close": pd.Series([], dtype=float)})
+        fut_daily = fut.groupby("date", as_index=False).first()[["date", "close"]].rename(columns={"close": "futures_underlying"})
+        nifty = nifty.merge(fut_daily, on="date", how="left", validate="many_to_one")
+        nifty["underlying_close"] = nifty["underlying_close"].fillna(nifty["futures_underlying"])
+        nifty = nifty.drop(columns=["futures_underlying"])
 
     opt = nifty[nifty.instrument.str.contains("OPT", na=False)].copy()
     opt = opt[opt.option_type.isin(["CE", "PE"])]
-    opt = opt.merge(fut_daily, on="date", how="left", validate="many_to_one")
     opt = opt.drop_duplicates(subset=["date", "expiry", "strike", "option_type"], keep="last")
     opt = opt.sort_values(["date", "expiry", "strike", "option_type"])
     root.mkdir(parents=True, exist_ok=True)
@@ -123,7 +130,6 @@ def load_nifty_options(cache_dir: str, lookback_days: int = 900) -> pd.DataFrame
     end = datetime.now(IST).date()
     start = end - timedelta(days=lookback_days)
 
-    # Primary source: public Kaggle datasets staged by the GitHub Actions workflow.
     kaggle_roots = [Path(x) for x in os.environ.get("KAGGLE_DATASET_ROOTS", "").split(os.pathsep) if x]
     if kaggle_roots:
         try:
@@ -131,30 +137,11 @@ def load_nifty_options(cache_dir: str, lookback_days: int = 900) -> pd.DataFrame
 
             k = load_from_kaggle_roots(kaggle_roots)
             if not k.empty:
-                k = k[(k.date.dt.date >= start) & (k.date.dt.date <= end)].copy()
+                k = k[(pd.to_datetime(k.date).dt.date >= start) & (pd.to_datetime(k.date).dt.date <= end)].copy()
                 if not k.empty:
-                    return _finalize(
-                        pd.DataFrame({
-                            "date": k["date"],
-                            "symbol": k["symbol"],
-                            "instrument": k["instrument"],
-                            "option_type": k["option_type"],
-                            "expiry": k["expiry"],
-                            "strike": k["strike"],
-                            "open": k["open"],
-                            "high": k["high"],
-                            "low": k["low"],
-                            "close": k["close"],
-                            "settlement": k["settlement"],
-                            "volume": k["volume"],
-                            "oi": k["oi"],
-                        }),
-                        root,
-                        start,
-                        end,
-                    ).assign(underlying_close=k["underlying_close"].values)
+                    return _finalize(k, root, start, end)
         except Exception as exc:
-            print(f"Kaggle loader failed; falling back to NSE archives: {exc}")
+            print(f"Kaggle loader failed; falling back to NSE archives/cache: {exc}")
 
     frames: list[pd.DataFrame] = []
     if parquet.exists():
