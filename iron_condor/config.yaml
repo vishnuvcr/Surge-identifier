@@ -1,0 +1,37 @@
+instrument: NIFTY
+initial_capital: 100000
+lot_size: auto
+entry_weekdays: [0, 1, 2, 3]
+entry_time: "10:00"
+exit_time: "15:15"
+
+strike_selection:
+  methods: [delta, pct_otm, atr_distance, iv_percentile]
+  short_delta_grid: [0.10, 0.12, 0.15, 0.18, 0.20, 0.25]
+  wing_width_points: [100, 150, 200, 250, 300, 400, 500]
+
+risk:
+  max_margin_fraction: 0.60
+  max_loss_fraction_per_trade: 0.10
+  profit_take_credit_fraction: [0.25, 0.40, 0.50, 0.60, 0.70, 0.80]
+  stop_loss_credit_multiple: [1.0, 1.25, 1.5, 1.75, 2.0]
+  exit_days_before_expiry: [0, 1]
+  exit_hours_before_expiry: [0, 2, 4]
+
+filters:
+  min_credit_pct_width: [0.10, 0.15, 0.20, 0.25, 0.30]
+  max_realized_vol: [0.15, 0.20, 0.25, 0.30, 0.40, 0.60]
+  max_atr_pct: [0.01, 0.015, 0.02, 0.025, 0.03]
+
+execution:
+  entry_slippage_points: [0, 0.25, 0.5, 1.0]
+  exit_slippage_points: [0, 0.25, 0.5, 1.0]
+  brokerage_per_order: 20
+  include_statutory_charges: true
+
+validation:
+  target_weekly_return: 0.05
+  target_frequency: "weekly"
+  minimum_oos_weeks: 52
+  rolling_train_weeks: 104
+  test_windows: 4
