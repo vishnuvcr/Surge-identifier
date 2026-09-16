@@ -72,29 +72,15 @@ def _normalize_option_chunk(df: pd.DataFrame) -> pd.DataFrame | None:
     out["date"] = pd.to_datetime(df[date_col], errors="coerce").dt.normalize()
     out["expiry"] = pd.to_datetime(df[expiry_col], errors="coerce").dt.normalize()
     out["strike"] = pd.to_numeric(df[strike_col], errors="coerce")
-    out["option_type"] = (
-        df[opt_col].astype(str).str.strip().str.upper()
-        .replace({"CALL": "CE", "PUT": "PE", "C": "CE", "P": "PE"})
-    )
+    out["option_type"] = df[opt_col].astype(str).str.strip().str.upper().replace({"CALL": "CE", "PUT": "PE", "C": "CE", "P": "PE"})
     out["close"] = pd.to_numeric(df[price_col], errors="coerce")
-    for name, aliases in [
-        ("open", OPEN_ALIASES),
-        ("high", HIGH_ALIASES),
-        ("low", LOW_ALIASES),
-        ("volume", VOLUME_ALIASES),
-        ("open_interest", OI_ALIASES),
-        ("underlying_close", UNDERLYING_ALIASES),
-    ]:
+    for name, aliases in [("open", OPEN_ALIASES), ("high", HIGH_ALIASES), ("low", LOW_ALIASES), ("volume", VOLUME_ALIASES), ("open_interest", OI_ALIASES), ("underlying_close", UNDERLYING_ALIASES)]:
         col = _find_col(df.columns, aliases)
         out[name] = pd.to_numeric(df[col], errors="coerce") if col else pd.NA
-
     out["symbol"] = df[symbol_col].astype(str).str.strip().str.upper() if symbol_col else "NIFTY"
-    # Some option-chain datasets omit an explicit index symbol. Their contract schema
-    # is unambiguous enough for this research when the file itself is known to be NIFTY.
     if symbol_col is None:
         out["symbol"] = "NIFTY"
-    mask_nifty = out["symbol"].str.contains("NIFTY", regex=False, na=False)
-    out = out.loc[mask_nifty & out["option_type"].isin(["CE", "PE"])]
+    out = out.loc[out["symbol"].str.contains("NIFTY", regex=False, na=False) & out["option_type"].isin(["CE", "PE"])]
     out = out.dropna(subset=["date", "expiry", "strike", "close"])
     out = out.loc[out["close"] > 0]
     if out.empty:
@@ -102,11 +88,15 @@ def _normalize_option_chunk(df: pd.DataFrame) -> pd.DataFrame | None:
     return out[["date", "expiry", "strike", "option_type", "open", "high", "low", "close", "volume", "open_interest", "underlying_close", "symbol"]]
 
 
-def _load_spot_proxy(root: Path, chunksize: int = 200_000) -> pd.DataFrame:
+def _load_underlying_proxy(root: Path, chunksize: int = 200_000) -> pd.DataFrame:
+    """Find NIFTY spot/futures/index data and collapse it to one close per date."""
     parts: list[pd.DataFrame] = []
     for path in _candidate_files(root):
-        s = str(path).lower()
-        if not any(token in s for token in ("spot", "index", "future", "futures", "nifty50", "underlying", "merged")):
+        name = str(path).lower()
+        # Avoid re-reading the very large option table as a spot source.
+        if "final_merged_output" in name or "option" in name or "chain" in name:
+            continue
+        if not any(token in name for token in ("spot", "index", "future", "futures", "nifty50", "underlying")):
             continue
         try:
             for chunk in _iter_tables(path, chunksize=chunksize):
@@ -114,27 +104,18 @@ def _load_spot_proxy(root: Path, chunksize: int = 200_000) -> pd.DataFrame:
                 price_col = _find_col(chunk.columns, PRICE_ALIASES)
                 if not date_col or not price_col:
                     continue
-                x = pd.DataFrame({
-                    "date": pd.to_datetime(chunk[date_col], errors="coerce").dt.normalize(),
-                    "underlying_close": pd.to_numeric(chunk[price_col], errors="coerce"),
-                })
+                x = pd.DataFrame({"date": pd.to_datetime(chunk[date_col], errors="coerce").dt.normalize(), "underlying_close": pd.to_numeric(chunk[price_col], errors="coerce")})
                 sym_col = _find_col(chunk.columns, SYMBOL_ALIASES)
                 if sym_col:
-                    sym = chunk[sym_col].astype(str).str.upper()
-                    x = x.loc[sym.str.contains("NIFTY", na=False)]
+                    x = x.loc[chunk[sym_col].astype(str).str.upper().str.contains("NIFTY", na=False)]
                 x = x.dropna(subset=["date", "underlying_close"])
                 if not x.empty:
                     parts.append(x.groupby("date", as_index=False)["underlying_close"].last())
-        except Exception:
-            continue
+        except Exception as exc:
+            print(f"Underlying proxy skipped: {path.name}: {type(exc).__name__}: {exc}", flush=True)
     if not parts:
         return pd.DataFrame(columns=["date", "underlying_close"])
-    return (
-        pd.concat(parts, ignore_index=True)
-        .drop_duplicates("date", keep="last")
-        .sort_values("date")
-        .reset_index(drop=True)
-    )
+    return pd.concat(parts, ignore_index=True).drop_duplicates("date", keep="last").sort_values("date").reset_index(drop=True)
 
 
 def load_from_kaggle_roots(roots: list[str]) -> pd.DataFrame:
@@ -142,14 +123,13 @@ def load_from_kaggle_roots(roots: list[str]) -> pd.DataFrame:
     work_root = Path(tempfile.mkdtemp(prefix="kaggle-nifty-ingest-"))
     part_dir = work_root / "options"
     part_dir.mkdir(parents=True, exist_ok=True)
-    part_count = 0
     try:
+        part_count = 0
         for root_str in roots:
             root = Path(root_str)
             if not root.exists():
                 continue
             for path in _candidate_files(root):
-                wrote = False
                 try:
                     for chunk_no, chunk in enumerate(_iter_tables(path), start=1):
                         normalized = _normalize_option_chunk(chunk)
@@ -157,19 +137,15 @@ def load_from_kaggle_roots(roots: list[str]) -> pd.DataFrame:
                             continue
                         normalized.to_parquet(part_dir / f"part-{part_count:06d}.parquet", index=False)
                         part_count += 1
-                        wrote = True
                         if part_count % 10 == 0:
                             print(f"Kaggle ingest progress: parts={part_count}, source={path.name}, chunk={chunk_no}", flush=True)
                 except Exception as exc:
                     print(f"Skipping {path}: {type(exc).__name__}: {exc}", flush=True)
-                # Do not stop just because a non-option file was encountered.
-                _ = wrote
 
         parts = sorted(part_dir.glob("part-*.parquet"))
         if not parts:
             raise RuntimeError("No usable NIFTY option rows found in Kaggle datasets")
 
-        # Reduce each part independently, then concatenate only the compact result.
         for i, part in enumerate(parts, start=1):
             x = pd.read_parquet(part)
             x = x.sort_values(["date", "expiry", "strike", "option_type"])
@@ -180,28 +156,23 @@ def load_from_kaggle_roots(roots: list[str]) -> pd.DataFrame:
                 print(f"Kaggle reduce progress: {i}/{len(parts)}", flush=True)
 
         reduced = sorted(part_dir.glob("reduced-*.parquet"))
-        frames = [pd.read_parquet(p) for p in reduced]
-        options = pd.concat(frames, ignore_index=True)
-        del frames
+        options = pd.concat([pd.read_parquet(p) for p in reduced], ignore_index=True)
         options = options.sort_values(["date", "expiry", "strike", "option_type"])
         options = options.drop_duplicates(["date", "expiry", "strike", "option_type"], keep="last")
 
-        # Prefer any underlying value supplied by the source. If absent, build a daily
-        # proxy from NIFTY spot/index/future files rather than silently leaving it null.
-        supplied = options[["date", "underlying_close"]].dropna()
-        if not supplied.empty:
-            supplied = supplied.groupby("date", as_index=False)["underlying_close"].last()
-            options = options.drop(columns=["underlying_close"]).merge(supplied, on="date", how="left", validate="many_to_one")
-
-        if options["underlying_close"].isna().any():
-            proxies = []
+        proxy = _load_underlying_proxy(Path(roots[-1])) if roots else pd.DataFrame()
+        if proxy.empty and roots:
             for root_str in roots:
-                p = _load_spot_proxy(Path(root_str))
-                if not p.empty:
-                    proxies.append(p)
-            if proxies:
-                proxy = pd.concat(proxies, ignore_index=True).drop_duplicates("date", keep="last")
-                options = options.drop(columns=["underlying_close"]).merge(proxy, on="date", how="left", validate="many_to_one")
+                proxy = _load_underlying_proxy(Path(root_str))
+                if not proxy.empty:
+                    break
+        if not proxy.empty:
+            supplied = options[["date", "underlying_close"]].dropna().groupby("date", as_index=False)["underlying_close"].last()
+            proxy = proxy.rename(columns={"underlying_close": "proxy_underlying"})
+            options = options.drop(columns=["underlying_close"]).merge(supplied.rename(columns={"underlying_close": "supplied_underlying"}), on="date", how="left", validate="many_to_one")
+            options = options.merge(proxy, on="date", how="left", validate="many_to_one")
+            options["underlying_close"] = options["supplied_underlying"].fillna(options["proxy_underlying"])
+            options = options.drop(columns=["supplied_underlying", "proxy_underlying"])
 
         options["option_type"] = options["option_type"].astype("category")
         for col in ["strike", "open", "high", "low", "close", "volume", "open_interest", "underlying_close"]:
