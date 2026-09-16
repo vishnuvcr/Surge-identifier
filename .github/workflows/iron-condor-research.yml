@@ -30,7 +30,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt --no-cache-dir
+          pip install "numpy>=2.0,<3" "pandas>=2.2,<3" "pyarrow>=17,<23" "requests>=2.32,<3" "scikit-learn>=1.5,<2" "pyyaml>=6,<7" --no-cache-dir
           pip install kagglehub --no-cache-dir
 
       - name: Download public Kaggle NIFTY datasets
