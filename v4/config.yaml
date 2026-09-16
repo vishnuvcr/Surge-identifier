@@ -1,0 +1,50 @@
+capital: 100000
+underlying: NIFTY
+entry_slippage_points: 0.50
+exit_slippage_points: 0.50
+brokerage_per_order: 20.0
+stt_sell_pct: 0.0015
+stamp_buy_pct: 0.00003
+sebi_turnover_pct: 0.000001
+exchange_txn_pct: 0.00035
+gst_pct: 0.18
+min_dte: 7
+max_dte: 35
+max_hold_days: [2, 3, 5, 7]
+entry_signal_lag_days: 1
+moneyness_steps: [-1, 0, 1]
+strike_step_points: 50
+rsi_period: [7, 14]
+rsi_call_min: [55, 60]
+rsi_put_max: [45, 40]
+ema_fast: [10, 20]
+ema_slow: [30, 50]
+breakout_lookback: [10, 20]
+atrop_period: [10, 14]
+atr_pct_min: [0.8, 1.0, 1.2]
+target_pct: [0.50, 0.75, 1.00, 1.50, 2.00]
+stop_pct: [0.25, 0.35, 0.50, 0.65]
+position_risk_pct: [0.10, 0.15, 0.20]
+min_training_trades: 40
+min_months_training: 18
+selection_slippage_points: 0.50
+monthly_target_return: 0.30
+walk_forward:
+  - train_end: '2020-12-31'
+    test_start: '2021-01-01'
+    test_end: '2021-12-31'
+  - train_end: '2021-12-31'
+    test_start: '2022-01-01'
+    test_end: '2022-12-31'
+  - train_end: '2022-12-31'
+    test_start: '2023-01-01'
+    test_end: '2023-12-31'
+  - train_end: '2023-12-31'
+    test_start: '2024-01-01'
+    test_end: '2024-12-31'
+  - train_end: '2024-12-31'
+    test_start: '2025-01-01'
+    test_end: '2025-12-31'
+  - train_end: '2025-12-31'
+    test_start: '2026-01-01'
+    test_end: latest
