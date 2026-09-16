@@ -27,7 +27,7 @@ def _parse(content: bytes, dt: date) -> pd.DataFrame:
         with zf.open(zf.namelist()[0]) as f:
             raw = pd.read_csv(f)
     raw.columns = [str(c).strip() for c in raw.columns]
-    out = pd.DataFrame({
+    return pd.DataFrame({
         "date": pd.Timestamp(dt),
         "symbol": _pick(raw, "TckrSymb", "SYMBOL").astype(str).str.strip().str.upper(),
         "instrument": _pick(raw, "FinInstrmTp", "INSTRUMENT").astype(str).str.strip().str.upper(),
@@ -42,7 +42,6 @@ def _parse(content: bytes, dt: date) -> pd.DataFrame:
         "volume": pd.to_numeric(_pick(raw, "TtlTradgVol", "CONTRACTS"), errors="coerce").fillna(0),
         "oi": pd.to_numeric(_pick(raw, "OpnIntrst", "OPENINT"), errors="coerce").fillna(0),
     })
-    return out
 
 
 def _download(dt: date, raw_dir: Path):
@@ -84,10 +83,23 @@ def load_nifty_options(cache_dir: str, lookback_days: int = 900) -> pd.DataFrame
     if not frames:
         return pd.DataFrame()
     raw = pd.concat(frames, ignore_index=True)
-    raw = raw[(raw["symbol"] == "NIFTY") & raw["instrument"].str.contains("OPT", na=False)]
-    raw = raw[raw["option_type"].isin(["CE", "PE", "CALL", "PUT"])]
-    raw["option_type"] = raw["option_type"].replace({"CALL": "CE", "PUT": "PE"})
-    raw = raw.drop_duplicates(subset=["date", "expiry", "strike", "option_type"], keep="last")
-    raw = raw.sort_values(["date", "expiry", "strike", "option_type"])
-    raw.to_parquet(parquet, index=False)
-    return raw
+
+    # Keep both NIFTY options and the nearest available NIFTY futures close as an underlying proxy.
+    nifty = raw[raw["symbol"] == "NIFTY"].copy()
+    fut = nifty[nifty["instrument"].str.contains("FUT", na=False) & nifty["close"].notna()].copy()
+    if not fut.empty:
+        fut["days_to_expiry"] = (fut["expiry"] - fut["date"]).dt.days
+        fut = fut[fut["days_to_expiry"] >= 0]
+        fut = fut.sort_values(["date", "days_to_expiry"])
+        fut_daily = fut.groupby("date", as_index=False).first()[["date", "close"]].rename(columns={"close": "underlying_close"})
+    else:
+        fut_daily = pd.DataFrame(columns=["date", "underlying_close"])
+
+    opt = nifty[nifty["instrument"].str.contains("OPT", na=False)].copy()
+    opt = opt[opt["option_type"].isin(["CE", "PE", "CALL", "PUT"])]
+    opt["option_type"] = opt["option_type"].replace({"CALL": "CE", "PUT": "PE"})
+    opt = opt.merge(fut_daily, on="date", how="left")
+    opt = opt.drop_duplicates(subset=["date", "expiry", "strike", "option_type"], keep="last")
+    opt = opt.sort_values(["date", "expiry", "strike", "option_type"])
+    opt.to_parquet(parquet, index=False)
+    return opt
