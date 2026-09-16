@@ -1,0 +1,21 @@
+name: Launch Phase 6.5 Backtest
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  launch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch Phase 6.5 backtest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run backtest-phase65.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
+          echo 'Phase 6.5 backtest workflow dispatched.'
