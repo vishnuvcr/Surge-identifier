@@ -64,6 +64,40 @@ jobs:
           cp data/cache/nifty_options_long.parquet data/cache/nifty_options.parquet
           cp data/cache/nifty_futures_long.parquet data/cache/nifty_futures.parquet
 
+      - name: Repair V3 expanding walk-forward setup
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          cfg_path = Path('v3/config.yaml')
+          cfg = cfg_path.read_text()
+          cfg = cfg.replace('initial_training_sessions: 99999', 'initial_training_sessions: 504')
+          cfg_path.write_text(cfg)
+
+          p = Path('v3/run_daily_walk_forward.py')
+          s = p.read_text()
+
+          old_guard = '''    market = Market(options, futures)\n    market.setup_index()\n    if len(market.dates) < int(CFG["initial_training_sessions"]) + 20:\n        raise RuntimeError("Insufficient synchronized option/futures history for V3")\n'''
+          new_guard = '''    market = Market(options, futures)\n    market.setup_index()\n    minimum_training_sessions = int(CFG["initial_training_sessions"])\n    if len(market.dates) <= minimum_training_sessions:\n        raise RuntimeError(\n            "Insufficient synchronized option/futures history for V3: "\n            f"usable_sessions={len(market.dates)}, "\n            f"minimum_required={minimum_training_sessions + 1}, "\n            f"dataset_start={market.dates[0] if market.dates else None}, "\n            f"dataset_end={market.dates[-1] if market.dates else None}"\n        )\n'''
+          assert old_guard in s, 'Expected V3 history guard not found'
+          s = s.replace(old_guard, new_guard, 1)
+
+          old_training = '''        if idx < int(CFG["initial_training_sessions"]):\n            train_start = market.dates[0]\n        else:\n            train_start = market.dates[max(0, idx - int(CFG["initial_training_sessions"]))]\n        train_end = market.dates[idx - 1]\n'''
+          new_training = '''        if idx < minimum_training_sessions:\n            raise RuntimeError(\n                f"First OOS window {window_name} begins before the configured "\n                f"minimum training history: available_before_test={idx}, "\n                f"minimum_training_sessions={minimum_training_sessions}"\n            )\n        # True expanding walk-forward: the training start remains fixed at the\n        # first synchronized historical session while the training end advances.\n        train_start = dataset_start\n        train_end = market.dates[idx - 1]\n'''
+          assert old_training in s, 'Expected V3 training-window block not found'
+          s = s.replace(old_training, new_training, 1)
+
+          p.write_text(s)
+          print('V3 source/config repaired for true expanding walk-forward training.')
+          PY
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add v3/config.yaml v3/run_daily_walk_forward.py
+          git diff --cached --check
+          git diff --cached --quiet || git commit -m 'ci: repair V3 expanding walk-forward setup [skip ci]'
+          git push origin iron-condor-v3-daily-walk-forward
+
       - name: Run V3 expanding walk-forward daily backtest
         run: python v3/run_daily_walk_forward.py
 
