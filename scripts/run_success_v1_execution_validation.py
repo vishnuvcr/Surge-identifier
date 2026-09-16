@@ -3,15 +3,19 @@ from __future__ import annotations
 import itertools
 import json
 import os
+import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import yaml
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from src.iron_condor_engine_v1 import CostModel, choose, lot_size_for_expiry
 
-ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "backtest/results/success-v1-validation"
 OUT.mkdir(parents=True, exist_ok=True)
 
@@ -113,19 +117,12 @@ def trade(m, signal_date, cfg, delayed=True, slippage_per_leg=0.0):
     if credit <= 0 or max_loss_points <= 0:
         return None
 
-    # Entry slippage: long buys worse, short sells worse.
+    # Four option legs are filled once at entry and once at exit. Slippage is
+    # charged against the trader on each leg and each side: 8 * slippage points.
     effective_credit = credit - 4.0 * slippage_per_leg
     exit_date, reason, mmark = exp, "expiry", None
-    adverse = np.nan
-    adverse_date = pd.NaT
-    exit_start = entry_date if not delayed else entry_date
-    exit_dates = [d for d in m["dates"] if d > exit_start and d <= exp]
+    exit_dates = [d for d in m["dates"] if d > entry_date and d <= exp]
     for d in exit_dates:
-        b = bound(m, d, exp, lt)
-        if b is not None:
-            adverse = min(adverse if not np.isnan(adverse) else 1e99, effective_credit + b)
-            if adverse == 1e99:
-                adverse_date = d
         mm = mark(m, d, exp, lt)
         if mm is None:
             continue
@@ -147,6 +144,7 @@ def trade(m, signal_date, cfg, delayed=True, slippage_per_leg=0.0):
     costs = CostModel().total([(ep[0], xp[0], 1), (ep[1], xp[1], -1), (ep[2], xp[2], -1), (ep[3], xp[3], 1)], lot)
     net = gross - costs
     min_bound = np.nan
+    adverse_date = pd.NaT
     for d in m["dates"]:
         if d > entry_date and d <= exp:
             b = bound(m, d, exp, lt)
@@ -208,7 +206,6 @@ def configs(cfg):
 def score(t, capital):
     if t.empty:
         return -1e9
-    m = metrics(t, capital)
     return 2*t.net_pnl.median()/capital + t.net_pnl.mean()/capital - 0.5*max(0, -t.net_pnl.min()/capital)
 
 
@@ -229,7 +226,6 @@ def main():
     data = load_data()
     base = {"capital": cfg["capital"], "weekday": cfg["entry_weekday"], "min_dte": cfg["min_days_to_expiry"], "max_dte": cfg["max_days_to_expiry"], "distance": cfg["selected_distance"], "width": cfg["selected_wing_width"], "tp": cfg["selected_take_profit"], "sl": cfg["selected_stop_loss"]}
 
-    dates = sorted(data.date.unique())
     split = pd.Timestamp("2024-02-02")
     oos = data.loc[data.date >= split]
     same = run_config(oos, base, oos.date.min(), oos.date.max(), delayed=False, slippage_per_leg=0)
@@ -243,7 +239,6 @@ def main():
         slips.append({"slippage_per_leg": s, **metrics(t, base["capital"])})
     pd.DataFrame(slips).to_csv(OUT / "slippage_sensitivity.csv", index=False)
 
-    # Conservative path-risk audit of the delayed-entry model.
     if not delayed.empty:
         delayed["bound_negative"] = delayed.conservative_intraday_pnl_points < 0
         delayed["bound_below_half_max_loss"] = delayed.conservative_intraday_pnl_points <= -0.5 * (delayed.max_loss / delayed.lot)
