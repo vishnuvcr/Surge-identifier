@@ -14,6 +14,7 @@ permissions:
 
 env:
   PYTHONUNBUFFERED: "1"
+  IRON_CONDOR_LOOKBACK_DAYS: "2500"
 
 defaults:
   run:
@@ -62,6 +63,7 @@ jobs:
 
       - name: Build combined NIFTY option dataset
         run: |
+          mkdir -p data/cache
           python - <<'PY'
           from src.nse_options import load_nifty_options
           x = load_nifty_options('data/cache', lookback_days=2500)
@@ -102,4 +104,4 @@ jobs:
             data/cache/nifty_options.parquet
           if-no-files-found: error
 
-# Trigger a fresh validation run after the cache-directory fix.
+# Fresh validation run after large-dataset ingestion and full-history fixes.
