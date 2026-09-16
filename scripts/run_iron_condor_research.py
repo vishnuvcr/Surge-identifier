@@ -3,7 +3,15 @@ from __future__ import annotations
 import itertools
 import json
 import os
+import sys
 from pathlib import Path
+
+# When this file is executed as `python scripts/run_iron_condor_research.py`,
+# Python puts `scripts/` on sys.path rather than the repository root. Add the
+# repository root explicitly so imports such as `from src...` work in CI.
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 import pandas as pd
 import yaml
