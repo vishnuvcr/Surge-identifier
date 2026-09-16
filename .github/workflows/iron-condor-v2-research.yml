@@ -1,6 +1,8 @@
 name: Iron Condor V2 Research
 
 on:
+  push:
+    branches: [iron-condor-v2]
   workflow_dispatch:
     inputs:
       start_date:
