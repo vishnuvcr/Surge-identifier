@@ -33,12 +33,16 @@ def _download_bytes(dt: date, retries: int = 4) -> bytes | None:
     dd = dt.strftime("%d")
     mon = dt.strftime("%b").upper()
     yyyy = dt.strftime("%Y")
-    urls = [
-        f"https://nsearchives.nseindia.com/content/historical/DERIVATIVES/{yyyy}/{mon}/fo{dd}{mon}{yyyy}bhav.csv.zip",
-        f"https://archives.nseindia.com/content/historical/DERIVATIVES/{yyyy}/{mon}/fo{dd}{mon}{yyyy}bhav.csv.zip",
-        f"https://archives.nseindia.com/content/fo/BhavCopy_NSE_FO_0_0_0_{yyyy}{dt:%m}{dd}_F_0000.csv.zip",
-        f"https://nsearchives.nseindia.com/content/fo/BhavCopy_NSE_FO_0_0_0_{yyyy}{dt:%m}{dd}_F_0000.csv.zip",
-    ]
+    if dt >= date(2024, 7, 8):
+        urls = [
+            f"https://nsearchives.nseindia.com/content/fo/BhavCopy_NSE_FO_0_0_0_{yyyy}{dt:%m}{dd}_F_0000.csv.zip",
+            f"https://archives.nseindia.com/content/fo/BhavCopy_NSE_FO_0_0_0_{yyyy}{dt:%m}{dd}_F_0000.csv.zip",
+        ]
+    else:
+        urls = [
+            f"https://nsearchives.nseindia.com/content/historical/DERIVATIVES/{yyyy}/{mon}/fo{dd}{mon}{yyyy}bhav.csv.zip",
+            f"https://archives.nseindia.com/content/historical/DERIVATIVES/{yyyy}/{mon}/fo{dd}{mon}{yyyy}bhav.csv.zip",
+        ]
     for url in urls:
         for attempt in range(retries):
             try:
@@ -71,7 +75,6 @@ def _extract_nifty_options(content: bytes, dt: date) -> pd.DataFrame:
         csvs = [n for n in zf.namelist() if n.lower().endswith((".csv", ".txt"))]
         if not csvs:
             return pd.DataFrame()
-        # UDiFF archives are normally a single CSV, but keep the first CSV fallback.
         with zf.open(csvs[0]) as fh:
             raw = pd.read_csv(fh, low_memory=False)
 
@@ -80,7 +83,6 @@ def _extract_nifty_options(content: bytes, dt: date) -> pd.DataFrame:
     # Legacy NSE FO bhavcopy (through 05-Jul-2024).
     if {"INSTRUMENT", "SYMBOL", "EXPIRY_DT", "STRIKE_PR", "OPTION_TYP", "CLOSE"}.issubset(raw.columns):
         symbol = raw["SYMBOL"].astype(str).str.upper()
-        instrument = raw["INSTRUMENT"].astype(str).str.upper()
         option_type = raw["OPTION_TYP"].astype(str).str.upper()
         expiry = pd.to_datetime(raw["EXPIRY_DT"], errors="coerce").dt.normalize()
         strike = _num(raw["STRIKE_PR"], raw.index)
@@ -91,14 +93,14 @@ def _extract_nifty_options(content: bytes, dt: date) -> pd.DataFrame:
         settlement = _num(_pick(raw, "SETTLE_PR"), raw.index)
         volume = _num(_pick(raw, "CONTRACTS"), raw.index).fillna(0)
         oi = _num(_pick(raw, "OPEN_INT"), raw.index).fillna(0)
+        xmask = symbol.eq("NIFTY") & option_type.isin(["CE", "PE"])
     # NSE UDiFF F&O common bhavcopy (from 08-Jul-2024).
     else:
         required = {"TckrSymb", "XpryDt", "StrkPric", "OptnTp", "ClsPric"}
         if not required.issubset(raw.columns):
             return pd.DataFrame()
-        symbol = raw["TckrSymb"].astype(str).str.upper()
-        instrument = raw["FinInstrmTp"].astype(str).str.upper() if "FinInstrmTp" in raw.columns else pd.Series("", index=raw.index)
-        option_type = raw["OptnTp"].astype(str).str.upper()
+        symbol = raw["TckrSymb"].astype(str).str.upper().str.strip()
+        option_type = raw["OptnTp"].astype(str).str.upper().str.strip()
         expiry = pd.to_datetime(raw["XpryDt"], errors="coerce").dt.normalize()
         strike = _num(raw["StrkPric"], raw.index)
         close = _num(raw["ClsPric"], raw.index)
@@ -108,30 +110,26 @@ def _extract_nifty_options(content: bytes, dt: date) -> pd.DataFrame:
         settlement = _num(_pick(raw, "SttlmPric"), raw.index)
         volume = _num(_pick(raw, "TtlTradgVol"), raw.index).fillna(0)
         oi = _num(_pick(raw, "OpnIntrst"), raw.index).fillna(0)
+        # Do not rely on FinInstrmTp here: NSE's UDiFF instrument-type labels have varied
+        # across exchange/format revisions. NIFTY + CE/PE is the stable identifier.
+        xmask = symbol.eq("NIFTY") & option_type.isin(["CE", "PE"])
 
-    # IDO is the UDiFF instrument type for index options, including NIFTY.
-    xmask = (
-        symbol.eq("NIFTY")
-        & option_type.isin(["CE", "PE"])
-        & (instrument.eq("OPTIDX") | instrument.eq("IDO") | instrument.eq(""))
-    )
-    x = raw.loc[xmask].copy()
-    if x.empty:
+    xidx = raw.index[xmask]
+    if len(xidx) == 0:
         return pd.DataFrame()
 
-    idx = x.index
     out = pd.DataFrame({
         "date": pd.Timestamp(dt),
-        "expiry": expiry.loc[idx].values,
-        "strike": strike.loc[idx].values,
-        "option_type": option_type.loc[idx].values,
-        "open": open_.loc[idx].values,
-        "high": high.loc[idx].values,
-        "low": low.loc[idx].values,
-        "close": close.loc[idx].values,
-        "settlement": settlement.loc[idx].values,
-        "volume": volume.loc[idx].values,
-        "open_interest": oi.loc[idx].values,
+        "expiry": expiry.loc[xidx].values,
+        "strike": strike.loc[xidx].values,
+        "option_type": option_type.loc[xidx].values,
+        "open": open_.loc[xidx].values,
+        "high": high.loc[xidx].values,
+        "low": low.loc[xidx].values,
+        "close": close.loc[xidx].values,
+        "settlement": settlement.loc[xidx].values,
+        "volume": volume.loc[xidx].values,
+        "open_interest": oi.loc[xidx].values,
     })
     out = out.dropna(subset=["expiry", "strike", "close"])
     out = out.loc[out["expiry"] >= out["date"]]
