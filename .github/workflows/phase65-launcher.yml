@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - '.github/workflows/phase65-launcher.yml'
+      - '.github/workflows/backtest-phase65.yml'
 
 permissions:
   contents: read
