@@ -101,3 +101,5 @@ jobs:
             backtest/results/iron-condor/
             data/cache/nifty_options.parquet
           if-no-files-found: error
+
+# Trigger a fresh validation run after the cache-directory fix.
