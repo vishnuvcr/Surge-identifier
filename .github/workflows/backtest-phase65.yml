@@ -64,6 +64,34 @@ jobs:
           assert int(m['fno']['rows']) == len(f)
           print('Master dataset OK:', len(p), 'cash rows;', len(f), 'F&O rows')
           PY
+      - name: Normalize Phase 6.5 target-key compatibility
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/moe_engine_phase65.py')
+          text = path.read_text()
+          replacements = {
+              'short_hit_025': 'short_hit_p025',
+              'long_hit_025': 'long_hit_p025',
+          }
+          before = text
+          for old, new in replacements.items():
+              text = text.replace(old, new)
+          path.write_text(text)
+          if text == before:
+              print('Phase 6.5 label names already normalized')
+          else:
+              print('Phase 6.5 label names normalized')
+          PY
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('src/moe_engine_phase65.py').read_text()
+          assert 'short_hit_025' not in text
+          assert 'long_hit_025' not in text
+          assert 'short_hit_p025' in text
+          assert 'long_hit_p025' in text
+          print('Phase 6.5 label compatibility check passed')
+          PY
       - name: Run Phase 6.5 bidirectional adaptive MoE
         env:
           PHASE65_OUTPUT_DIR: backtest/results/phase65
