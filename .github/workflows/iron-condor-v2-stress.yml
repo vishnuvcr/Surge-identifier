@@ -1,0 +1,62 @@
+name: Iron Condor V2 Stress Validation
+
+on:
+  push:
+    branches: [iron-condor-v2]
+  workflow_dispatch:
+
+concurrency:
+  group: iron-condor-v2-stress
+  cancel-in-progress: false
+
+jobs:
+  stress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      PYTHONUNBUFFERED: '1'
+      NSE_HISTORY_START: '2015-01-01'
+      NSE_HISTORY_WORKERS: '5'
+    steps:
+      - name: Checkout V2 branch
+        uses: actions/checkout@v4
+        with:
+          ref: iron-condor-v2
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install "numpy>=2.0,<3" "pandas>=2.2,<3" "pyarrow>=17,<23" "requests>=2.32,<3"
+      - name: Preflight stress script
+        run: python -m py_compile scripts/run_v2_stress_validation.py
+      - name: Download full NSE history
+        run: python scripts/download_nifty_nse_history.py
+      - name: Validate history
+        run: |
+          python - <<'PY'
+          import pandas as pd
+          o=pd.read_parquet('data/cache/nifty_options_long.parquet',columns=['date','option_type','close'])
+          f=pd.read_parquet('data/cache/nifty_futures_long.parquet',columns=['date','expiry','close'])
+          assert o.date.min().year <= 2015 and o.date.max().year >= 2026
+          assert f.date.min().year <= 2015 and f.date.max().year >= 2026
+          assert set(o.option_type.unique()) == {'CE','PE'}
+          assert (o.close>0).all() and (f.close>0).all()
+          print('history OK',len(o),len(f))
+          PY
+      - name: Run path-risk and credit-threshold robustness
+        run: python scripts/run_v2_stress_validation.py
+      - name: Validate stress outputs
+        run: |
+          test -f backtest/results/iron-condor-v2-stress/v2_stress_summary.json
+          test -f backtest/results/iron-condor-v2-stress/v2_path_risk_trades.csv
+          test -f backtest/results/iron-condor-v2-stress/v2_credit_threshold_sensitivity.csv
+      - name: Upload stress artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: iron-condor-v2-stress-${{ github.run_number }}
+          path: backtest/results/iron-condor-v2-stress/
+          retention-days: 30
