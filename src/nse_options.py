@@ -12,7 +12,6 @@ import pandas as pd
 import requests
 
 IST = timezone(timedelta(hours=5, minutes=30))
-BASE = "https://nsearchives.nseindia.com/content/fo/BhavCopy_NSE_FO_0_0_0_{ymd}_F_0000.csv.zip"
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/134 Safari/537.36"
 
 
@@ -55,9 +54,6 @@ def _download(dt: date, raw_dir: Path):
     try:
         if fp.exists():
             return _parse(fp.read_bytes(), dt)
-        # NSE's official UDiFF endpoint.  The workflow also has a GitHub-hosted
-        # validated archive fallback because GitHub runners can intermittently be
-        # unable to reach nsearchives.nseindia.com.
         for host in ("https://archives.nseindia.com", "https://nsearchives.nseindia.com"):
             url = f"{host}/content/fo/BhavCopy_NSE_FO_0_0_0_{dt:%Y%m%d}_F_0000.csv.zip"
             r = requests.get(url, headers={"User-Agent": UA}, timeout=40)
@@ -71,9 +67,9 @@ def _download(dt: date, raw_dir: Path):
 
 
 def _parse_external_archives(archive_root: Path, start: date, end: date) -> list[pd.DataFrame]:
-    """Read a prevalidated NSE F&O archive mirror checked out by the CI workflow."""
     frames: list[pd.DataFrame] = []
-    for fp in sorted(archive_root.glob("data/20{25,26}/**/*.zip")):
+    files = list(archive_root.glob("data/2025/**/*.zip")) + list(archive_root.glob("data/2026/**/*.zip"))
+    for fp in sorted(files):
         m = re.search(r"(\d{8})", fp.name)
         if not m:
             continue
@@ -95,8 +91,8 @@ def load_nifty_options(cache_dir: str, lookback_days: int = 900) -> pd.DataFrame
     parquet = root / "nifty_options.parquet"
     end = datetime.now(IST).date()
     start = end - timedelta(days=lookback_days)
-
     frames: list[pd.DataFrame] = []
+
     if parquet.exists():
         old = pd.read_parquet(parquet)
         if not old.empty:
@@ -104,13 +100,10 @@ def load_nifty_options(cache_dir: str, lookback_days: int = 900) -> pd.DataFrame
             old["expiry"] = pd.to_datetime(old["expiry"], errors="coerce").dt.normalize()
             frames.append(old[(old.date.dt.date >= start) & (old.date.dt.date <= end)])
 
-    # Preferred CI path: use the validated public archive mirror rather than
-    # depending on NSE's website being reachable from a GitHub-hosted runner.
     external = Path("/tmp/nse-fno-data-bank")
     if external.exists():
         frames.extend(_parse_external_archives(external, start, end))
 
-    # If the external mirror is unavailable, fall back to direct NSE downloads.
     if not frames:
         raw_dir = root / "fo_raw"
         dates = [end - timedelta(days=i) for i in range(lookback_days, -1, -1) if (end - timedelta(days=i)).weekday() < 5]
