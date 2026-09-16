@@ -2,6 +2,9 @@ name: Launch Phase 6.5 Backtest
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/phase65-launcher.yml'
 
 permissions:
   contents: read
