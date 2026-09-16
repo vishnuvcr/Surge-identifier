@@ -1,0 +1,109 @@
+name: Iron Condor V3 Daily Walk-Forward
+
+on:
+  push:
+    branches: [iron-condor-v3-daily-walk-forward]
+    paths:
+      - 'v3/**'
+      - 'scripts/download_nifty_nse_history.py'
+      - 'src/iron_condor_engine_v1.py'
+      - 'requirements.txt'
+      - '.github/workflows/iron-condor-v3-daily-walk-forward.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: iron-condor-v3-daily-walk-forward
+  cancel-in-progress: false
+
+jobs:
+  backtest:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout V3 branch
+        uses: actions/checkout@v4
+        with:
+          ref: iron-condor-v3-daily-walk-forward
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download / refresh complete NIFTY history
+        env:
+          NSE_HISTORY_START: '2015-01-01'
+          NSE_HISTORY_END: '2026-09-16'
+          NSE_HISTORY_WORKERS: '5'
+        run: python scripts/download_nifty_nse_history.py
+
+      - name: Validate synchronized history files
+        run: |
+          test -s data/cache/nifty_options_long.parquet
+          test -s data/cache/nifty_futures_long.parquet
+          python - <<'PY'
+          import pandas as pd
+          o = pd.read_parquet('data/cache/nifty_options_long.parquet')
+          f = pd.read_parquet('data/cache/nifty_futures_long.parquet')
+          print('Options:', len(o), 'rows', o.date.min(), 'to', o.date.max())
+          print('Futures:', len(f), 'rows', f.date.min(), 'to', f.date.max())
+          assert o.date.min() < o.date.max()
+          assert f.date.min() < f.date.max()
+          PY
+
+      - name: Prepare V3 data aliases
+        run: |
+          cp data/cache/nifty_options_long.parquet data/cache/nifty_options.parquet
+          cp data/cache/nifty_futures_long.parquet data/cache/nifty_futures.parquet
+
+      - name: Run V3 expanding walk-forward daily backtest
+        run: python v3/run_daily_walk_forward.py
+
+      - name: Validate V3 research artifacts
+        run: |
+          test -s v3/research/daily_walk_forward_summary.json
+          test -s v3/research/daily_decisions.csv
+          test -s v3/research/oos_trade_ledger.csv
+          test -s v3/research/window_summary.csv
+          test -s v3/research/training_leaderboards_top25.csv
+          test -s v3/research/path_risk_audit.csv
+          test -s v3/research/slippage_stress.csv
+          python - <<'PY'
+          import json
+          s=json.load(open('v3/research/daily_walk_forward_summary.json'))
+          assert s['methodology']['expanding_training'] is True
+          assert s['methodology']['entry_execution'].startswith('next available session')
+          assert s['overall_oos']['trades'] >= 1
+          print(json.dumps(s['overall_oos'], indent=2))
+          print('Windows:', len(s['windows']))
+          PY
+
+      - name: Commit V3 research results to isolated branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add v3/research
+          git diff --cached --quiet || git commit -m 'Publish V3 daily walk-forward backtest results'
+          git push origin iron-condor-v3-daily-walk-forward
+
+      - name: Upload V3 research artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: iron-condor-v3-daily-walk-forward
+          path: |
+            v3/research/daily_walk_forward_summary.json
+            v3/research/daily_decisions.csv
+            v3/research/oos_trade_ledger.csv
+            v3/research/window_summary.csv
+            v3/research/training_leaderboards_top25.csv
+            v3/research/path_risk_audit.csv
+            v3/research/slippage_stress.csv
+          if-no-files-found: error
