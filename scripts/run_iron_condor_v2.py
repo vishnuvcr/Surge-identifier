@@ -3,15 +3,22 @@ from __future__ import annotations
 import itertools
 import json
 import math
+import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import yaml
 
+# `python scripts/run_iron_condor_v2.py` puts scripts/ on sys.path rather than
+# the repository root. Add ROOT explicitly so src/ imports are deterministic in
+# GitHub Actions and local execution.
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from src.iron_condor_engine_v1 import CostModel, lot_size_for_expiry
 
-ROOT = Path(__file__).resolve().parents[1]
 CFG = yaml.safe_load((ROOT / "config.iron_condor_v2.yaml").read_text())
 CAPITAL = float(CFG["capital"])
 
@@ -105,8 +112,12 @@ def run_config(market: Market, params: dict, start=None, end=None, slippage=None
     min_credit = float(params.get("minimum_credit", 0.0))
     rows = []
     active_until = None
-    entry_weekdays = set(int(x) for x in CFG["entry_weekdays"] if int(x) == int(params["entry_weekday"]))
-    dates = [d for d in market.dates if d.weekday() in entry_weekdays and (start is None or d >= start) and (end is None or d <= end)]
+    dates = [
+        d for d in market.dates
+        if d.weekday() == int(params["entry_weekday"])
+        and (start is None or d >= start)
+        and (end is None or d <= end)
+    ]
     for signal_date in dates:
         if active_until is not None and signal_date <= active_until:
             continue
@@ -117,9 +128,15 @@ def run_config(market: Market, params: dict, start=None, end=None, slippage=None
         if legs4 is None:
             continue
         leg_keys = [(legs4[0], "PE"), (legs4[1], "PE"), (legs4[2], "CE"), (legs4[3], "CE")]
+
+        # Signal is generated from the completed signal session. Execution occurs
+        # on the first subsequent eligible NSE session. A trade whose entry falls
+        # outside the research window is excluded rather than allowed to borrow
+        # information from the next window.
         entry_date = next((d for d in market.dates if d > signal_date and d <= expiry), None)
-        if entry_date is None:
+        if entry_date is None or (end is not None and entry_date > end):
             continue
+
         entry = [market.price(entry_date, expiry, k, t) for k, t in leg_keys]
         if any(v is None or v <= 0 for v in entry):
             continue
@@ -131,10 +148,12 @@ def run_config(market: Market, params: dict, start=None, end=None, slippage=None
         max_loss_points = max(legs4[1] - legs4[0], legs4[3] - legs4[2]) - raw_credit
         if max_loss_points <= 0:
             continue
+
         exit_date = None
         reason = "expiry"
         exit_mark = None
-        for day in [d for d in market.dates if entry_date < d <= expiry]:
+        sim_days = [d for d in market.dates if entry_date < d <= expiry and (end is None or d <= end)]
+        for day in sim_days:
             vals = [market.price(day, expiry, k, t) for k, t in leg_keys]
             if any(v is None for v in vals):
                 continue
@@ -149,12 +168,19 @@ def run_config(market: Market, params: dict, start=None, end=None, slippage=None
             if exit_debit >= sl_debit:
                 exit_date, reason, exit_mark = day, "stop_loss", mark
                 break
+
+        # Never let a training/OOS boundary trade be settled using information
+        # after the requested end date. If no exit occurred inside the window and
+        # expiry itself is beyond the window, the trade is omitted.
         if exit_date is None:
+            if end is not None and expiry > end:
+                continue
             exit_date = expiry
             vals = [market.price(exit_date, expiry, k, t) for k, t in leg_keys]
             if any(v is None for v in vals):
                 continue
             exit_mark = vals[1] + vals[2] - vals[0] - vals[3]
+
         exit_px = [market.price(exit_date, expiry, k, t) for k, t in leg_keys]
         if any(v is None for v in exit_px):
             continue
@@ -163,29 +189,30 @@ def run_config(market: Market, params: dict, start=None, end=None, slippage=None
         gross = (effective_credit + exit_mark - 4.0 * slip) * lot
         net = gross - cost
         active_until = pd.Timestamp(exit_date)
-        row = {
-            "signal_date": pd.Timestamp(signal_date),
-            "entry_date": pd.Timestamp(entry_date),
-            "exit_date": pd.Timestamp(exit_date),
-            "expiry": pd.Timestamp(expiry),
-            "entry_weekday": int(params["entry_weekday"]),
-            "dte_at_signal": int((expiry - signal_date).days),
-            "nifty_reference_signal": float(market.spot[signal_date]),
-            "put_long": legs4[0], "put_short": legs4[1], "call_short": legs4[2], "call_long": legs4[3],
-            "put_long_entry": entry[0], "put_short_entry": entry[1], "call_short_entry": entry[2], "call_long_entry": entry[3],
-            "put_long_exit": exit_px[0], "put_short_exit": exit_px[1], "call_short_exit": exit_px[2], "call_long_exit": exit_px[3],
-            "raw_credit_points": raw_credit, "effective_credit_points": effective_credit,
-            "minimum_credit": min_credit, "slippage_per_leg": slip,
-            "wing_width": float(params["width"]), "distance": float(params["distance"]),
-            "take_profit": float(params["take_profit"]), "stop_loss": float(params["stop_loss"]),
-            "lot": int(lot), "max_loss": float(max_loss_points * lot),
-            "lower_breakeven": float(legs4[1] - raw_credit), "upper_breakeven": float(legs4[2] + raw_credit),
-            "gross_pnl": float(gross), "costs": float(cost), "net_pnl": float(net),
-            "return_on_capital": float(net / CAPITAL), "return_on_max_loss": float(net / (max_loss_points * lot)),
-            "reason": reason,
-        }
         if collect:
-            rows.append(row)
+            rows.append({
+                "signal_date": pd.Timestamp(signal_date),
+                "entry_date": pd.Timestamp(entry_date),
+                "exit_date": pd.Timestamp(exit_date),
+                "expiry": pd.Timestamp(expiry),
+                "entry_weekday": int(params["entry_weekday"]),
+                "dte_at_signal": int((expiry - signal_date).days),
+                "dte_at_entry": int((expiry - entry_date).days),
+                "nifty_reference_signal": float(market.spot[signal_date]),
+                "nifty_reference_entry": float(market.spot.get(entry_date, np.nan)),
+                "put_long": legs4[0], "put_short": legs4[1], "call_short": legs4[2], "call_long": legs4[3],
+                "put_long_entry": entry[0], "put_short_entry": entry[1], "call_short_entry": entry[2], "call_long_entry": entry[3],
+                "put_long_exit": exit_px[0], "put_short_exit": exit_px[1], "call_short_exit": exit_px[2], "call_long_exit": exit_px[3],
+                "raw_credit_points": raw_credit, "effective_credit_points": effective_credit,
+                "minimum_credit": min_credit, "slippage_per_leg": slip,
+                "wing_width": float(params["width"]), "distance": float(params["distance"]),
+                "take_profit": float(params["take_profit"]), "stop_loss": float(params["stop_loss"]),
+                "lot": int(lot), "max_loss": float(max_loss_points * lot),
+                "lower_breakeven": float(legs4[1] - raw_credit), "upper_breakeven": float(legs4[2] + raw_credit),
+                "gross_pnl": float(gross), "costs": float(cost), "net_pnl": float(net),
+                "return_on_capital": float(net / CAPITAL), "return_on_max_loss": float(net / (max_loss_points * lot)),
+                "reason": reason,
+            })
     return pd.DataFrame(rows)
 
 
@@ -264,6 +291,8 @@ def main():
         raise FileNotFoundError("Run the existing NSE long-history downloader first")
     m = Market(pd.read_parquet(opt_path), pd.read_parquet(fut_path))
     dates = list(m.dates)
+    if len(dates) < 100:
+        raise RuntimeError("Not enough overlapping option/futures sessions for V2")
     split = int(len(dates) * 0.70)
     train_start, train_end = dates[0], dates[split - 1]
     oos_start, oos_end = dates[split], dates[-1]
