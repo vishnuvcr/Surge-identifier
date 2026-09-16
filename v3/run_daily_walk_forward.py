@@ -476,8 +476,15 @@ def main():
     futures = pd.read_parquet(futures_path)
     market = Market(options, futures)
     market.setup_index()
-    if len(market.dates) < int(CFG["initial_training_sessions"]) + 20:
-        raise RuntimeError("Insufficient synchronized option/futures history for V3")
+    minimum_training_sessions = int(CFG["initial_training_sessions"])
+    if len(market.dates) <= minimum_training_sessions:
+        raise RuntimeError(
+            "Insufficient synchronized option/futures history for V3: "
+            f"usable_sessions={len(market.dates)}, "
+            f"minimum_required={minimum_training_sessions + 1}, "
+            f"dataset_start={market.dates[0] if market.dates else None}, "
+            f"dataset_end={market.dates[-1] if market.dates else None}"
+        )
 
     dataset_start, dataset_end = market.dates[0], market.dates[-1]
     min_train_start = dataset_start
@@ -495,10 +502,15 @@ def main():
             continue
         first_test = test_dates[0]
         idx = session_index[first_test]
-        if idx < int(CFG["initial_training_sessions"]):
-            train_start = market.dates[0]
-        else:
-            train_start = market.dates[max(0, idx - int(CFG["initial_training_sessions"]))]
+        if idx < minimum_training_sessions:
+            raise RuntimeError(
+                f"First OOS window {window_name} begins before the configured "
+                f"minimum training history: available_before_test={idx}, "
+                f"minimum_training_sessions={minimum_training_sessions}"
+            )
+        # True expanding walk-forward: the training start remains fixed at the
+        # first synchronized historical session while the training end advances.
+        train_start = dataset_start
         train_end = market.dates[idx - 1]
 
         params, train_trades, leaderboard = choose_best_config(market, train_start, train_end)

@@ -1,7 +1,7 @@
 capital: 100000
 # Large sentinel means training starts at the first available historical session and expands
 # forward to the session immediately before each OOS reporting window.
-initial_training_sessions: 99999
+initial_training_sessions: 504
 minimum_training_trades: 40
 minimum_credit_points: 10.0
 selection_slippage_per_leg_points: 0.50
