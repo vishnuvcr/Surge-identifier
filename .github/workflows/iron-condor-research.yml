@@ -6,19 +6,12 @@ on:
     branches: [iron-condor-weekly-research]
 
 concurrency:
-  group: iron-condor-research
+  group: iron-condor-weekly-research
   cancel-in-progress: false
-
-permissions:
-  contents: read
 
 env:
   PYTHONUNBUFFERED: "1"
   IRON_CONDOR_LOOKBACK_DAYS: "2500"
-
-defaults:
-  run:
-    shell: bash
 
 jobs:
   research:
@@ -31,20 +24,20 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
           cache: pip
 
       - name: Install dependencies
         run: |
-          pip install -r requirements.txt
-          pip install kagglehub
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt --no-cache-dir
+          pip install kagglehub --no-cache-dir
 
       - name: Download public Kaggle NIFTY datasets
         run: |
           python - <<'PY'
           import kagglehub
           from pathlib import Path
-
           datasets = [
               "ayushsacri/indian-nifty-and-banknifty-options-data-2020-2024",
               "pariminikhil/nifty-option-chain-3-oct-24-to-24-mar-26",
@@ -85,23 +78,30 @@ jobs:
 
       - name: Validate research artifacts
         run: |
-          test -s backtest/results/iron-condor/training_leaderboard.csv
           test -s backtest/results/iron-condor/oos_summary.json
+          test -s backtest/results/iron-condor/leaderboard.csv
           python - <<'PY'
-          import json
-          x = json.load(open('backtest/results/iron-condor/oos_summary.json'))
-          print(json.dumps(x, indent=2))
-          assert x.get('data_ok') is True
-          assert x.get('trades', 0) > 0
+          import json, pandas as pd
+          from pathlib import Path
+          root = Path('backtest/results/iron-condor')
+          summary = json.loads((root/'oos_summary.json').read_text())
+          board = pd.read_csv(root/'leaderboard.csv')
+          print('OOS summary:', json.dumps(summary, indent=2))
+          print('Leaderboard rows:', len(board))
+          print('Trades:', summary.get('oos_trades'))
+          if summary.get('data_ok') is not True:
+              raise SystemExit('Research data_ok flag is not true')
+          if int(summary.get('oos_trades', 0)) <= 0:
+              raise SystemExit('OOS produced zero trades')
+          if len(board) == 0:
+              raise SystemExit('Empty leaderboard')
           PY
 
       - name: Upload research artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: nifty-iron-condor-research
+          name: iron-condor-research-${{ github.run_number }}
           path: |
             backtest/results/iron-condor/
             data/cache/nifty_options.parquet
-          if-no-files-found: error
-
-# Fresh validation run after large-dataset ingestion and full-history fixes.
+          retention-days: 30
