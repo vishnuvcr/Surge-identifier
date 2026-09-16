@@ -71,7 +71,25 @@ def main() -> None:
     prices_idx = prices.set_index(['date', 'symbol']).sort_index()
     price_days = set(prices_idx.index.get_level_values(0).unique())
 
-    eligible_set = liquidity_table(prices, int(cfg['liquidity_lookback_sessions']), float(cfg['min_avg_turnover_cr']))
+    # liquidity_table currently returns entries shaped as ((date, symbol), bool)
+    # because the source is a stacked Series. Normalize that representation here
+    # rather than letting pd.Timestamp() receive the entire (date, symbol) tuple.
+    eligible_raw = liquidity_table(prices, int(cfg['liquidity_lookback_sessions']), float(cfg['min_avg_turnover_cr']))
+    eligible_set = set()
+    for item in eligible_raw:
+        if (
+            isinstance(item, tuple)
+            and len(item) == 2
+            and isinstance(item[0], tuple)
+            and len(item[0]) == 2
+        ):
+            (day, sym), flag = item
+            if bool(flag):
+                eligible_set.add((pd.Timestamp(day).normalize(), sym))
+        elif isinstance(item, tuple) and len(item) == 2:
+            day, sym = item
+            eligible_set.add((pd.Timestamp(day).normalize(), sym))
+
     eligible_by_day = {}
     for day, sym in eligible_set:
         eligible_by_day.setdefault(pd.Timestamp(day), set()).add(sym)
