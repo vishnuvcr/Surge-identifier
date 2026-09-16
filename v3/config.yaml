@@ -1,5 +1,7 @@
 capital: 100000
-initial_training_sessions: 504
+# Large sentinel means training starts at the first available historical session and expands
+# forward to the session immediately before each OOS reporting window.
+initial_training_sessions: 99999
 minimum_training_trades: 40
 minimum_credit_points: 10.0
 selection_slippage_per_leg_points: 0.50
@@ -9,20 +11,20 @@ max_days_to_expiry: 7
 max_holding_sessions: 8
 max_overlapping_positions: 1
 
-# 256-config base grid. Parameters are selected daily from completed historical trades only.
+# 256-config base grid. One configuration is frozen for each OOS walk-forward window.
 short_distance_pct: [0.0125, 0.0150, 0.0175, 0.0200]
 wing_width_points: [150, 200, 250, 300]
 take_profit_credit_pct: [0.40, 0.50, 0.60, 0.70]
 stop_loss_credit_multiple: [1.00, 1.25, 1.50, 2.00]
 
-# Selection score components. All are calculated strictly on historical trades before the decision date.
+# Selection score components. All are calculated strictly inside the preceding training period.
 score_median_weight: 2.0
 score_mean_weight: 1.0
 score_winrate_weight: 0.10
 score_worst_trade_weight: 0.50
 score_drawdown_weight: 0.50
 
-# Walk-forward reporting windows. Daily selection remains continuous; these are reporting partitions.
+# Daily decisions inside expanding walk-forward reporting windows.
 walk_forward_reporting:
   - name: "2018"
     start: "2018-01-01"
