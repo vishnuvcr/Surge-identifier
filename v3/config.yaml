@@ -1,6 +1,8 @@
 capital: 100000
-# Large sentinel means training starts at the first available historical session and expands
-# forward to the session immediately before each OOS reporting window.
+# Minimum synchronized warm-up history before the first OOS window.
+# The V3 engine requires an eligible near-expiry option contract, so early
+# pre-weekly-option history is retained in the dataset but not used as an OOS
+# reporting window.
 initial_training_sessions: 504
 minimum_training_trades: 40
 minimum_credit_points: 10.0
@@ -25,16 +27,9 @@ score_worst_trade_weight: 0.50
 score_drawdown_weight: 0.50
 
 # Daily decisions inside expanding walk-forward reporting windows.
+# V3 begins reporting once the preceding training history contains enough
+# eligible near-expiry observations to satisfy the training-trade requirement.
 walk_forward_reporting:
-  - name: "2018"
-    start: "2018-01-01"
-    end: "2018-12-31"
-  - name: "2019"
-    start: "2019-01-01"
-    end: "2019-12-31"
-  - name: "2020"
-    start: "2020-01-01"
-    end: "2020-12-31"
   - name: "2021"
     start: "2021-01-01"
     end: "2021-12-31"
