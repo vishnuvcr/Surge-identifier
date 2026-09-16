@@ -7,20 +7,26 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class CostModel:
-    brokerage_per_order: float = 10.0
-    stt_sell_pct: float = 0.0015
+    """Approximate India equity/derivatives transaction costs for four-leg options."""
+    brokerage_per_order: float = 20.0
+    stt_sell_pct: float = 0.0010
     stamp_buy_pct: float = 0.00003
     sebi_turnover_pct: float = 0.000001
     exchange_txn_pct: float = 0.00035
     gst_pct: float = 0.18
 
     def total(self, legs, lot):
+        # Four option legs; each leg has one entry and one exit order.
         brokerage = 8 * self.brokerage_per_order
-        sell_value = sum((e if s < 0 else x) for e, x, s in legs) * lot
-        buy_value = sum((e if s > 0 else x) for e, x, s in legs) * lot
-        turnover = sum(abs(e) + abs(x) for e, x, _ in legs) * lot
+        sell_value = sum(entry if side < 0 else exit for entry, exit, side in legs) * lot
+        buy_value = sum(entry if side > 0 else exit for entry, exit, side in legs) * lot
+        turnover = sum(abs(entry) + abs(exit) for entry, exit, _ in legs) * lot
         txn = turnover * self.exchange_txn_pct
-        return brokerage + max(sell_value, 0) * self.stt_sell_pct + max(buy_value, 0) * self.stamp_buy_pct + turnover * self.sebi_turnover_pct + txn + (brokerage + txn) * self.gst_pct
+        stt = max(sell_value, 0.0) * self.stt_sell_pct
+        stamp = max(buy_value, 0.0) * self.stamp_buy_pct
+        sebi = turnover * self.sebi_turnover_pct
+        gst = (brokerage + txn) * self.gst_pct
+        return brokerage + stt + stamp + sebi + txn + gst
 
 
 def _spot(r, d):
@@ -48,7 +54,8 @@ def choose(r, d, e, distance, width):
     if len(ps) == 0 or len(cs) == 0:
         return None
     ps, cs = float(ps[-1]), float(cs[0])
-    pls, cls = strikes[strikes <= ps - width + 1e-9], strikes[strikes >= cs + width - 1e-9]
+    pls = strikes[strikes <= ps - width + 1e-9]
+    cls = strikes[strikes >= cs + width - 1e-9]
     if len(pls) == 0 or len(cls) == 0:
         return None
     return float(pls[-1]), ps, cs, float(cls[0])
@@ -99,11 +106,9 @@ def backtest(rows, cfg):
             if any(x is None for x in vals):
                 continue
             mark = vals[1] + vals[2] - vals[0] - vals[3]
-            xp = vals
-        else:
-            xp = [_p(r, exit_d, e, pl, "PE"), _p(r, exit_d, e, ps, "PE"), _p(r, exit_d, e, cs, "CE"), _p(r, exit_d, e, cl, "CE")]
-            if any(x is None for x in xp):
-                continue
+        xp = [_p(r, exit_d, e, pl, "PE"), _p(r, exit_d, e, ps, "PE"), _p(r, exit_d, e, cs, "CE"), _p(r, exit_d, e, cl, "CE")]
+        if any(x is None for x in xp):
+            continue
         gross = (credit + mark) * lot
         legs = [(ep[0], xp[0], 1), (ep[1], xp[1], -1), (ep[2], xp[2], -1), (ep[3], xp[3], 1)]
         fee = CostModel().total(legs, lot)
