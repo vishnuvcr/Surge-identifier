@@ -107,6 +107,7 @@ def main() -> None:
         'expert_prediction_rows': 0,
         'expert_top_rows': 0,
         'selected_rows': 0,
+        'execution_unavailable_rows': 0,
         'trade_days': 0,
         'no_trade_days': 0,
         'expert_refits': [],
@@ -144,8 +145,16 @@ def main() -> None:
             diagnostics['expert_prediction_rows'] += len(scored)
             selected, router_snapshot = select_top_predictions(scored, router, int(cfg['max_per_expert']), max(sizes))
             diagnostics['expert_top_rows'] += min(len(scored), len(bundles) * int(cfg['max_per_expert'])) if len(scored) else 0
-            diagnostics['selected_rows'] += len(selected)
             diagnostics['routing_weights_by_regime'].update({str(k): v for k, v in router_snapshot.items()})
+
+            # A prediction can only be executed when the corresponding symbol has
+            # an OHLC row on the next trading session. Keep the model ranking intact,
+            # but remove execution-unavailable symbols before allocating the portfolio.
+            available_entry_symbols = set(prices_idx.loc[entry_day].index)
+            before = len(selected)
+            selected = selected[selected.symbol.isin(available_entry_symbols)].copy()
+            diagnostics['execution_unavailable_rows'] += before - len(selected)
+            diagnostics['selected_rows'] += len(selected)
 
         if selected.empty:
             diagnostics['no_trade_days'] += 1
