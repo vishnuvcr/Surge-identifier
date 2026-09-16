@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -28,7 +29,11 @@ def main():
     cfg = yaml.safe_load(Path("config/iron_condor.yaml").read_text())
     out = Path("backtest/results/iron-condor")
     out.mkdir(parents=True, exist_ok=True)
-    data = load_nifty_options("data/cache", lookback_days=2500)
+
+    # Keep the research horizon aligned with the data-build step. This is deliberately
+    # configurable so future runs can use a different, explicitly recorded horizon.
+    lookback_days = int(os.environ.get("IRON_CONDOR_LOOKBACK_DAYS", "2500"))
+    data = load_nifty_options("data/cache", lookback_days=lookback_days)
     if data.empty:
         raise RuntimeError("No NIFTY option data loaded")
     data["date"] = pd.to_datetime(data["date"]).dt.normalize()
@@ -58,7 +63,7 @@ def main():
         raise RuntimeError("No viable iron condor configuration in training period")
 
     _, oos = backtest(test, best)
-    oos.update({"split_date": str(split.date()), "selected_parameters": best, "dataset_start": str(data.date.min().date()), "dataset_end": str(data.date.max().date())})
+    oos.update({"split_date": str(split.date()), "selected_parameters": best, "dataset_start": str(data.date.min().date()), "dataset_end": str(data.date.max().date()), "lookback_days": lookback_days})
     leaderboard = pd.DataFrame(rows).sort_values("train_score", ascending=False)
     leaderboard.to_csv(out / "training_leaderboard.csv", index=False)
     (out / "oos_summary.json").write_text(json.dumps(oos, indent=2, default=str))
