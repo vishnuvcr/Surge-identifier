@@ -1,0 +1,94 @@
+name: V4 NIFTY Option Buying Research
+
+on:
+  push:
+    branches: [iron-condor-v3-daily-walk-forward]
+    paths:
+      - 'v4/**'
+      - 'scripts/download_nifty_nse_history.py'
+      - 'requirements.txt'
+      - '.github/workflows/option-buying-v4.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: option-buying-v4
+  cancel-in-progress: false
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      PYTHONUNBUFFERED: '1'
+      NSE_HISTORY_START: '2015-01-01'
+      NSE_HISTORY_END: '2026-09-16'
+      NSE_HISTORY_WORKERS: '5'
+    steps:
+      - name: Checkout V4 research branch
+        uses: actions/checkout@v4
+        with:
+          ref: iron-condor-v3-daily-walk-forward
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Preflight V4
+        run: python -m py_compile v4/run_option_buying_research.py
+
+      - name: Download / refresh complete NIFTY options and futures history
+        run: python scripts/download_nifty_nse_history.py
+
+      - name: Validate synchronized history
+        run: |
+          test -s data/cache/nifty_options_long.parquet
+          test -s data/cache/nifty_futures_long.parquet
+          python - <<'PY'
+          import pandas as pd
+          o=pd.read_parquet('data/cache/nifty_options_long.parquet',columns=['date','expiry','option_type','close'])
+          f=pd.read_parquet('data/cache/nifty_futures_long.parquet',columns=['date','expiry','close'])
+          print('options',len(o),o.date.min(),o.date.max(),o.date.nunique())
+          print('futures',len(f),f.date.min(),f.date.max(),f.date.nunique())
+          assert o.date.min().year<=2015 and o.date.max().year>=2026
+          assert f.date.min().year<=2015 and f.date.max().year>=2026
+          assert set(o.option_type.unique()) == {'CE','PE'}
+          PY
+
+      - name: Run V4 option buying research
+        run: python v4/run_option_buying_research.py
+
+      - name: Validate V4 research outputs
+        run: |
+          test -s v4/research/summary.json
+          test -s v4/research/oos_trade_ledger.csv
+          test -s v4/research/walk_forward_summary.json
+          python - <<'PY'
+          import json
+          s=json.load(open('v4/research/summary.json'))
+          print(json.dumps(s['overall_oos'],indent=2))
+          assert len(s['windows']) == 6
+          assert s['overall_oos']['trades'] > 0
+          PY
+
+      - name: Commit V4 research results
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add v4/research
+          git diff --cached --quiet || git commit -m 'Publish V4 option buying research results'
+          git push origin iron-condor-v3-daily-walk-forward
+
+      - name: Upload V4 research artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: option-buying-v4-research
+          path: v4/research/
+          if-no-files-found: error
