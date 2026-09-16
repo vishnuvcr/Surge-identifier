@@ -14,7 +14,6 @@ import pandas as pd
 import yaml
 
 from src.iron_condor_engine import backtest_prepared, prepare_market
-from src.nse_options import _download_nifty_spot_proxy
 
 
 def combinations(cfg):
@@ -57,25 +56,41 @@ def _load_long_dataset(path: Path) -> pd.DataFrame:
     if data.empty:
         raise RuntimeError("Long-history parquet contains no CE/PE NIFTY options")
 
-    # Add an independent daily NIFTY spot series for strike selection.
-    proxy = _download_nifty_spot_proxy(data.date.min().date(), data.date.max().date())
-    if proxy.empty:
-        raise RuntimeError("Unable to obtain NIFTY spot proxy for long-history backtest")
-    data = data.merge(proxy, on="date", how="left", validate="many_to_one")
+    futures_path = Path(os.environ.get("IRON_CONDOR_FUTURES_PATH", "data/cache/nifty_futures_long.parquet"))
+    if not futures_path.exists():
+        raise RuntimeError(f"NSE NIFTY futures proxy file is missing: {futures_path}")
+    futures = pd.read_parquet(futures_path)
+    futures["date"] = pd.to_datetime(futures["date"]).dt.normalize()
+    futures["expiry"] = pd.to_datetime(futures["expiry"]).dt.normalize()
+    futures["close"] = pd.to_numeric(futures["close"], errors="coerce")
+    futures = futures.dropna(subset=["date", "expiry", "close"])
+    futures = futures.loc[futures["close"] > 0].copy()
+    futures["dte"] = (futures["expiry"] - futures["date"]).dt.days
+    futures = futures.loc[futures["dte"] >= 0].sort_values(["date", "dte"])
+    # Use the nearest non-expired NIFTY index-futures contract as an exchange-
+    # sourced underlying proxy. This avoids third-party rate limits and keeps
+    # the spot-selection series aligned to the same NSE daily session.
+    futures = futures.groupby("date", as_index=False).first()[["date", "close"]]
+    futures = futures.rename(columns={"close": "underlying_close"})
+
+    data = data.merge(futures, on="date", how="left", validate="many_to_one")
     coverage = float(data["underlying_close"].notna().mean())
+    print(f"NSE NIFTY futures underlying coverage: {coverage:.4%}")
     if coverage < 0.995:
-        raise RuntimeError(f"NIFTY spot coverage too low: {coverage:.4f}")
+        missing = data.loc[data["underlying_close"].isna(), "date"].drop_duplicates().sort_values()
+        sample = [str(x.date()) for x in missing.head(10)]
+        raise RuntimeError(f"NIFTY futures coverage too low: {coverage:.4f}; missing sample={sample}")
 
     # The strategy enters on Tuesday and chooses a contract 1-7 calendar days
     # from entry. Once selected, only that same near-term expiry is needed on
-    # subsequent daily marks. Keeping only 0-7 DTE rows dramatically reduces
-    # memory while preserving every price required by the strategy.
+    # subsequent daily marks. Keeping only 0-7 DTE rows reduces memory while
+    # preserving the option prices required by the strategy.
     data["dte"] = (data["expiry"] - data["date"]).dt.days
     data = data.loc[data["dte"].between(0, 7)].copy()
 
     # Keep enough strikes to cover the whole configured search grid, including
     # the far wing. The extra 1% cushion protects against strike-grid gaps.
-    max_distance = max(cfg_distance for cfg_distance in [0.03])
+    max_distance = 0.03
     max_width = 250.0
     rel_band = max_distance + max_width / data["underlying_close"] + 0.01
     data["rel_strike_distance"] = (data["strike"] / data["underlying_close"] - 1.0).abs()
@@ -161,8 +176,8 @@ def main():
 
     audit = {
         "data_frequency": "daily EOD NSE F&O bhavcopy; intraday path is not observable",
-        "spot_series": "Yahoo Finance ^NSEI daily close used as an independent spot proxy",
-        "history": "NSE NIFTY index-option bhavcopy history from 2015-01-01 through the latest available date",
+        "underlying_series": "nearest non-expired NIFTY index-futures close from the same NSE F&O bhavcopy session",
+        "history": "NSE NIFTY index-option and index-futures bhavcopy history from 2015-01-01 through the latest available date",
         "selection": "512 configurations selected using 70% chronological training segment only",
         "oos": "remaining 30% chronological segment",
         "execution": "entry/exit uses daily close prices with modeled transaction costs",
