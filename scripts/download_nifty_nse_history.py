@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import io
 import os
+import shutil
 import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import requests
 
@@ -21,15 +23,13 @@ HEADERS = {
     "Accept-Encoding": "gzip, deflate, br",
     "Referer": "https://www.nseindia.com/",
 }
-IST = "Asia/Kolkata"
 
 
 def trading_days(start: date, end: date) -> list[date]:
-    days = pd.date_range(start, end, freq="B")
-    return [x.date() for x in days]
+    return [x.date() for x in pd.date_range(start, end, freq="B")]
 
 
-def _download_bytes(dt: date, session: requests.Session, retries: int = 4) -> bytes | None:
+def _download_bytes(dt: date, retries: int = 4) -> bytes | None:
     dd = dt.strftime("%d")
     mon = dt.strftime("%b").upper()
     yyyy = dt.strftime("%Y")
@@ -42,7 +42,7 @@ def _download_bytes(dt: date, session: requests.Session, retries: int = 4) -> by
     for url in urls:
         for attempt in range(retries):
             try:
-                r = session.get(url, headers=HEADERS, timeout=45)
+                r = requests.get(url, headers=HEADERS, timeout=45)
                 if r.ok and r.content[:2] == b"PK":
                     return r.content
                 if r.status_code == 404:
@@ -55,14 +55,14 @@ def _download_bytes(dt: date, session: requests.Session, retries: int = 4) -> by
 
 def _extract_nifty_options(content: bytes, dt: date) -> pd.DataFrame:
     with zipfile.ZipFile(io.BytesIO(content)) as zf:
-        csvs = [n for n in zf.namelist() if n.lower().endswith(('.csv', '.txt'))]
+        csvs = [n for n in zf.namelist() if n.lower().endswith((".csv", ".txt"))]
         if not csvs:
             return pd.DataFrame()
         with zf.open(csvs[0]) as fh:
             raw = pd.read_csv(fh, low_memory=False)
     raw.columns = [str(c).strip() for c in raw.columns]
-    # NSE historical F&O bhavcopy naming; support a few common variants.
-    if "INSTRUMENT" not in raw.columns or "SYMBOL" not in raw.columns:
+    required = {"INSTRUMENT", "SYMBOL", "EXPIRY_DT", "STRIKE_PR", "OPTION_TYP", "CLOSE"}
+    if not required.issubset(raw.columns):
         return pd.DataFrame()
     x = raw.loc[
         (raw["INSTRUMENT"].astype(str).str.upper() == "OPTIDX")
@@ -72,45 +72,43 @@ def _extract_nifty_options(content: bytes, dt: date) -> pd.DataFrame:
     if x.empty:
         return pd.DataFrame()
 
+    def num(col):
+        return pd.to_numeric(x[col], errors="coerce") if col in x.columns else pd.Series(np.nan, index=x.index)
+
     out = pd.DataFrame({
         "date": pd.Timestamp(dt),
         "expiry": pd.to_datetime(x["EXPIRY_DT"], errors="coerce").dt.normalize(),
-        "strike": pd.to_numeric(x["STRIKE_PR"], errors="coerce"),
+        "strike": num("STRIKE_PR"),
         "option_type": x["OPTION_TYP"].astype(str).str.upper(),
-        "open": pd.to_numeric(x.get("OPEN"), errors="coerce"),
-        "high": pd.to_numeric(x.get("HIGH"), errors="coerce"),
-        "low": pd.to_numeric(x.get("LOW"), errors="coerce"),
-        "close": pd.to_numeric(x.get("CLOSE"), errors="coerce"),
-        "settlement": pd.to_numeric(x.get("SETTLE_PR"), errors="coerce"),
-        "volume": pd.to_numeric(x.get("CONTRACTS"), errors="coerce").fillna(0),
-        "open_interest": pd.to_numeric(x.get("OPEN_INT"), errors="coerce").fillna(0),
+        "open": num("OPEN"),
+        "high": num("HIGH"),
+        "low": num("LOW"),
+        "close": num("CLOSE"),
+        "settlement": num("SETTLE_PR"),
+        "volume": num("CONTRACTS").fillna(0),
+        "open_interest": num("OPEN_INT").fillna(0),
     })
     out = out.dropna(subset=["expiry", "strike", "close"])
-    out = out.loc[(out["expiry"] >= out["date"]), [
-        "date", "expiry", "strike", "option_type", "open", "high", "low", "close", "settlement", "volume", "open_interest"
-    ]]
+    out = out.loc[out["expiry"] >= out["date"]]
     return out.drop_duplicates(["date", "expiry", "strike", "option_type"], keep="last")
 
 
 def main() -> None:
     start = date.fromisoformat(os.environ.get("NSE_HISTORY_START", "2015-01-01"))
     end = date.fromisoformat(os.environ.get("NSE_HISTORY_END", str(datetime.now().date())))
-    max_workers = int(os.environ.get("NSE_HISTORY_WORKERS", "6"))
+    max_workers = int(os.environ.get("NSE_HISTORY_WORKERS", "5"))
     out_dir = Path(os.environ.get("NSE_HISTORY_OUT", "data/cache/nse_nifty_parts"))
     out_dir.mkdir(parents=True, exist_ok=True)
 
     days = trading_days(start, end)
     print(f"NSE history window: {start} -> {end} ({len(days):,} business days)", flush=True)
-
-    session = requests.Session()
-    parts: list[Path] = []
     failures: list[str] = []
 
     def worker(dt: date):
         fp = out_dir / f"{dt:%Y%m%d}.parquet"
         if fp.exists() and fp.stat().st_size > 0:
             return dt, fp, None
-        content = _download_bytes(dt, session)
+        content = _download_bytes(dt)
         if content is None:
             return dt, None, "download_failed_or_holiday"
         try:
@@ -122,17 +120,15 @@ def main() -> None:
         except Exception as exc:
             return dt, None, f"parse:{type(exc).__name__}:{exc}"
 
-    # A modest worker count is deliberate: NSE can throttle aggressive clients.
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = [pool.submit(worker, dt) for dt in days]
         for i, fut in enumerate(as_completed(futures), start=1):
             dt, fp, err = fut.result()
-            if fp is not None:
-                parts.append(fp)
-            elif err and err != "download_failed_or_holiday":
+            if err and err != "download_failed_or_holiday":
                 failures.append(f"{dt}:{err}")
             if i % 100 == 0 or i == len(days):
-                print(f"Progress: {i:,}/{len(days):,} | parts={len(parts):,} | nonempty_failures={len(failures):,}", flush=True)
+                ready = len(list(out_dir.glob("*.parquet")))
+                print(f"Progress: {i:,}/{len(days):,} | nonempty parts={ready:,} | parse failures={len(failures):,}", flush=True)
 
     files = sorted(out_dir.glob("*.parquet"))
     if not files:
@@ -144,8 +140,8 @@ def main() -> None:
     merged = merged.sort_values(["date", "expiry", "strike", "option_type"])
     merged = merged.drop_duplicates(["date", "expiry", "strike", "option_type"], keep="last").reset_index(drop=True)
 
-    # Daily NIFTY spot is added separately by the backtest loader from Yahoo.
     out = Path("data/cache/nifty_options_long.parquet")
+    out.parent.mkdir(parents=True, exist_ok=True)
     merged.to_parquet(out, index=False)
     report = {
         "start": str(merged.date.min().date()),
@@ -155,10 +151,11 @@ def main() -> None:
         "expiries": int(merged.expiry.nunique()),
         "contracts": int(merged[["expiry", "strike", "option_type"]].drop_duplicates().shape[0]),
         "files": int(len(files)),
-        "nonempty_failures": failures[:100],
-        "nonempty_failure_count": int(len(failures)),
+        "parse_failure_count": int(len(failures)),
+        "parse_failures": failures[:100],
     }
     Path("data/cache/nifty_options_long_manifest.json").write_text(pd.Series(report).to_json(indent=2))
+    shutil.rmtree(out_dir, ignore_errors=True)
     print("Final long-history dataset:", report, flush=True)
 
 
