@@ -37,8 +37,6 @@ def combinations(cfg):
 def rank(s):
     if not s.get("data_ok"):
         return -1e9
-    # Training score deliberately rewards central tendency and robustness while
-    # penalizing drawdown; the OOS period is never used for parameter selection.
     return (
         2.0 * s["median_weekly_return"]
         + s["avg_weekly_return"]
@@ -59,7 +57,6 @@ def _load_long_dataset(path: Path) -> pd.DataFrame:
     if data.empty:
         raise RuntimeError("Long-history parquet contains no CE/PE NIFTY options")
 
-    # The NSE bhavcopy contains NIFTY option prices but not the spot index.
     # Add an independent daily NIFTY spot series for strike selection.
     proxy = _download_nifty_spot_proxy(data.date.min().date(), data.date.max().date())
     if proxy.empty:
@@ -68,6 +65,25 @@ def _load_long_dataset(path: Path) -> pd.DataFrame:
     coverage = float(data["underlying_close"].notna().mean())
     if coverage < 0.995:
         raise RuntimeError(f"NIFTY spot coverage too low: {coverage:.4f}")
+
+    # The strategy enters on Tuesday and chooses a contract 1-7 calendar days
+    # from entry. Once selected, only that same near-term expiry is needed on
+    # subsequent daily marks. Keeping only 0-7 DTE rows dramatically reduces
+    # memory while preserving every price required by the strategy.
+    data["dte"] = (data["expiry"] - data["date"]).dt.days
+    data = data.loc[data["dte"].between(0, 7)].copy()
+
+    # Keep enough strikes to cover the whole configured search grid, including
+    # the far wing. The extra 1% cushion protects against strike-grid gaps.
+    max_distance = max(cfg_distance for cfg_distance in [0.03])
+    max_width = 250.0
+    rel_band = max_distance + max_width / data["underlying_close"] + 0.01
+    data["rel_strike_distance"] = (data["strike"] / data["underlying_close"] - 1.0).abs()
+    data = data.loc[data["rel_strike_distance"] <= rel_band]
+    data = data.drop(columns=["dte", "rel_strike_distance"])
+
+    if data.empty:
+        raise RuntimeError("Long-history filter removed all relevant weekly contracts")
     return data.sort_values(["date", "expiry", "strike", "option_type"]).reset_index(drop=True)
 
 
@@ -87,7 +103,7 @@ def main():
     split = pd.Timestamp(dates[split_index])
     train = data[data.date < split].copy()
     test = data[data.date >= split].copy()
-    print(f"Dataset: {len(data):,} rows, {len(dates):,} dates, {data.date.min().date()} -> {data.date.max().date()}")
+    print(f"Filtered dataset: {len(data):,} rows, {len(dates):,} dates, {data.date.min().date()} -> {data.date.max().date()}")
     print(f"70/30 split: {split.date()} | train={train.date.min().date()}->{train.date.max().date()} | oos={test.date.min().date()}->{test.date.max().date()}")
 
     train_market = prepare_market(train)
@@ -129,31 +145,29 @@ def main():
     leaderboard.to_csv(out / "training_leaderboard.csv", index=False)
     oos_trades.to_csv(out / "oos_trades.csv", index=False)
 
-    # Chronological OOS year breakdown for robustness diagnostics.
     oos_trades["exit_date"] = pd.to_datetime(oos_trades["exit_date"])
     year_rows = []
     for year, g in oos_trades.groupby(oos_trades["exit_date"].dt.year):
-        eq_end = 1.0 + g["net_pnl"].sum() / cfg["capital"]
         year_rows.append({
             "year": int(year),
             "trades": int(len(g)),
             "win_rate": float((g.net_pnl > 0).mean()),
             "net_pnl": float(g.net_pnl.sum()),
             "simple_return": float(g.net_pnl.sum() / cfg["capital"]),
-            "ending_equity_from_year_start": float(cfg["capital"] * eq_end),
             "worst_trade": float(g.net_pnl.min()),
             "conservative_intraday_negative_bound_rate": float((g.conservative_intraday_pnl < 0).mean()),
         })
     pd.DataFrame(year_rows).to_csv(out / "oos_year_breakdown.csv", index=False)
 
-    # Human-readable audit notes make the limitations explicit in the artifact.
     audit = {
         "data_frequency": "daily EOD NSE F&O bhavcopy; intraday path is not observable",
         "spot_series": "Yahoo Finance ^NSEI daily close used as an independent spot proxy",
+        "history": "NSE NIFTY index-option bhavcopy history from 2015-01-01 through the latest available date",
         "selection": "512 configurations selected using 70% chronological training segment only",
         "oos": "remaining 30% chronological segment",
         "execution": "entry/exit uses daily close prices with modeled transaction costs",
         "intraday_bound": "conservative same-day OHLC bound; four leg extremes are not assumed simultaneous",
+        "lot_size": "historical NIFTY lot-size schedule applied by option expiry vintage",
         "important": "The compounded return is the portfolio-equity metric; simple_total_return is the arithmetic sum of trade PnL divided by initial capital.",
     }
     (out / "backtest_audit.json").write_text(json.dumps(audit, indent=2))
