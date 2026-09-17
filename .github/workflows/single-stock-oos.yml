@@ -1,9 +1,8 @@
 name: Single Stock ML Walk-Forward OOS
-# Auto-rerun after nested strategy syntax fix
 
+# This workflow is intentionally manual. CPR / other main-branch commits
+# must not launch an expensive single-stock ML backtest automatically.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       symbol:
