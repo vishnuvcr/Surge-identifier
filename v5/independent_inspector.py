@@ -119,8 +119,15 @@ def main() -> int:
     for needle, label in [("'lots':1", 'one-lot trade control'), ("'qty':lot", 'quantity equals lot size'), ('theoretical_max_profit', 'analytical payoff bounds')]:
         if needle not in base_text and needle not in main_text:
             fail(f'missing {label}', failures)
-    if "len(s['walk_forward']) == 6" not in main_text and "len(s['walk_forward']) == 6" not in base_text:
+
+    # Require an explicit six-window assertion in the workflow/output gate.
+    # Match normal whitespace variants so formatting changes do not create a
+    # false inspector failure when the actual six-window check is present.
+    six_window_pattern = r"len\(s\[['\"]walk_forward['\"]\]\)\s*==\s*6"
+    six_window_present = bool(re.search(six_window_pattern, main_text)) or bool(re.search(six_window_pattern, base_text))
+    if not six_window_present:
         fail('six-window validation is missing', failures)
+
     if 'timeout-minutes: 360' not in main_text:
         fail('backtest lacks an explicit maximum runtime', failures)
 
