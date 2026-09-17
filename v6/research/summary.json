@@ -1,0 +1,733 @@
+{
+  "sample_count": 425,
+  "prediction_definition": "Next NIFTY expiry close from the first trading session after the previous expiry; model predicts expiry return then converts it to predicted NIFTY close.",
+  "regime_threshold": 0.005,
+  "strategies": [
+    "LONG_CALL",
+    "LONG_PUT",
+    "SHORT_CALL",
+    "SHORT_PUT",
+    "BULL_CALL_SPREAD",
+    "BEAR_CALL_SPREAD",
+    "BULL_PUT_SPREAD",
+    "BEAR_PUT_SPREAD",
+    "LONG_STRADDLE",
+    "SHORT_STRADDLE",
+    "LONG_STRANGLE",
+    "SHORT_STRANGLE",
+    "LONG_IRON_CONDOR",
+    "SHORT_IRON_CONDOR",
+    "LONG_IRON_BUTTERFLY",
+    "SHORT_IRON_BUTTERFLY",
+    "BULL_BUTTERFLY",
+    "BEAR_BUTTERFLY",
+    "BULL_CONDOR",
+    "BEAR_CONDOR",
+    "CALL_RATIO_SPREAD",
+    "PUT_RATIO_SPREAD",
+    "CALL_RATIO_BACKSPREAD",
+    "PUT_RATIO_BACKSPREAD",
+    "STRAP",
+    "STRIP",
+    "RISK_REVERSAL",
+    "REVERSE_RISK_REVERSAL",
+    "LONG_SYNTHETIC_FUTURE",
+    "SHORT_SYNTHETIC_FUTURE",
+    "JADE_LIZARD",
+    "REVERSE_JADE_LIZARD",
+    "RANGE_FORWARD",
+    "LONG_CALENDAR_CALL",
+    "LONG_CALENDAR_PUT",
+    "BATMAN",
+    "DOUBLE_PLATEAU"
+  ],
+  "walk_forward": [
+    {
+      "window": 1,
+      "train_rows": 111,
+      "test_rows": 53,
+      "strategy_map": {
+        "BULLISH": [
+          {
+            "actual_regime": "BULLISH",
+            "strategy": "LONG_SYNTHETIC_FUTURE",
+            "median": 0.000864727069619993,
+            "mean": 0.0015172057393117657,
+            "count": 51
+          },
+          {
+            "actual_regime": "BULLISH",
+            "strategy": "SHORT_PUT",
+            "median": 0.00057348310465,
+            "mean": 0.0006572342471341177,
+            "count": 51
+          },
+          {
+            "actual_regime": "BULLISH",
+            "strategy": "LONG_CALL",
+            "median": 0.00021776177270999624,
+            "mean": 0.0008599714921776481,
+            "count": 51
+          }
+        ],
+        "BEARISH": [
+          {
+            "actual_regime": "BEARISH",
+            "strategy": "SHORT_SYNTHETIC_FUTURE",
+            "median": 0.0010213772675699928,
+            "mean": 0.0023035555131074303,
+            "count": 35
+          },
+          {
+            "actual_regime": "BEARISH",
+            "strategy": "LONG_PUT",
+            "median": 0.0006873354588299999,
+            "mean": 0.001502665683554859,
+            "count": 35
+          },
+          {
+            "actual_regime": "BEARISH",
+            "strategy": "STRIP",
+            "median": 0.0006321027207900145,
+            "mean": 0.0017314684094360039,
+            "count": 35
+          }
+        ],
+        "RANGE_BOUND": [
+          {
+            "actual_regime": "RANGE_BOUND",
+            "strategy": "SHORT_PUT",
+            "median": 0.000313731269995,
+            "mean": 0.0003510472650137502,
+            "count": 24
+          },
+          {
+            "actual_regime": "RANGE_BOUND",
+            "strategy": "SHORT_STRADDLE",
+            "median": 0.00027938380752500196,
+            "mean": 0.0004912232979187504,
+            "count": 24
+          },
+          {
+            "actual_regime": "RANGE_BOUND",
+            "strategy": "SHORT_CALL",
+            "median": 9.215621795500005e-05,
+            "mean": 0.0001401760329050002,
+            "count": 24
+          }
+        ]
+      },
+      "selected_summary": {
+        "trades": 159,
+        "net_pnl": -6667.559616228003,
+        "return": -0.06667559616228003,
+        "win_rate": 0.4716981132075472,
+        "max_drawdown": -0.08407135874744043,
+        "profit_factor": 0.5787030285752638,
+        "median_trade": -9.544496843000005
+      }
+    },
+    {
+      "window": 2,
+      "train_rows": 152,
+      "test_rows": 52,
+      "strategy_map": {
+        "BULLISH": [
+          {
+            "actual_regime": "BULLISH",
+            "strategy": "LONG_SYNTHETIC_FUTURE",
+            "median": 0.0011854167562300073,
+            "mean": 0.0016306228832644887,
+            "count": 78
+          },
+          {
+            "actual_regime": "BULLISH",
+            "strategy": "SHORT_PUT",
+            "median": 0.0006396062902250001,
+            "mean": 0.0007231192018176924,
+            "count": 78
+          },
+          {
+            "actual_regime": "BULLISH",
+            "strategy": "LONG_CALL",
+            "median": 0.00039155869979500544,
+            "mean": 0.0009075036814467961,
+            "count": 78
+          }
+        ],
+        "BEARISH": [
+          {
+            "actual_regime": "BEARISH",
+            "strategy": "SHORT_SYNTHETIC_FUTURE",
+            "median": 0.0012794209002750018,
+            "mean": 0.0019328823972447628,
+            "count": 42
+          },
+          {
+            "actual_regime": "BEARISH",
+            "strategy": "LONG_PUT",
+            "median": 0.0006611117826350036,
+            "mean": 0.0012488137601335725,
+            "count": 42
+          },
+          {
+            "actual_regime": "BEARISH",
+            "strategy": "SHORT_CALL",
+            "median": 0.00047916399466,
+            "mean": 0.0006840686371111905,
+            "count": 42
+          }
+        ],
+        "RANGE_BOUND": [
+          {
+            "actual_regime": "RANGE_BOUND",
+            "strategy": "SHORT_STRADDLE",
+            "median": 0.0003340123379300073,
+            "mean": 0.0005084380608312901,
+            "count": 31
+          },
+          {
+            "actual_regime": "RANGE_BOUND",
+            "strategy": "SHORT_PUT",
+            "median": 0.00031398079145000005,
+            "mean": 0.00035358071051128976,
+            "count": 31
+          },
+          {
+            "actual_regime": "RANGE_BOUND",
+            "strategy": "SHORT_CALL",
+            "median": 0.00010438276925000003,
+            "mean": 0.00015485735032000036,
+            "count": 31
+          }
+        ]
+      },
+      "selected_summary": {
+        "trades": 156,
+        "net_pnl": -10301.454189876007,
+        "return": -0.10301454189876007,
+        "win_rate": 0.4551282051282051,
+        "max_drawdown": -0.11019272287687787,
+        "profit_factor": 0.46544421967102106,
+        "median_trade": -26.802542765999643
+      }
+    },
+    {
+      "window": 3,
+      "train_rows": 157,
+      "test_rows": 52,
+      "strategy_map": {
+        "BULLISH": [
+          {
+            "actual_regime": "BULLISH",
+            "strategy": "LONG_SYNTHETIC_FUTURE",
+            "median": 0.0016188412045300051,
+            "mean": 0.001997498667419757,
+            "count": 82
+          },
+          {
+            "actual_regime": "BULLISH",
+            "strategy": "SHORT_PUT",
+            "median": 0.0008237531240150001,
+            "mean": 0.0009005996462658537,
+            "count": 82
+          },
+          {
+            "actual_regime": "BULLISH",
+            "strategy": "LONG_CALL",
+            "median": 0.0007216312754600055,
+            "mean": 0.001096899021153903,
+            "count": 82
+          }
+        ],
+        "BEARISH": [
+          {
+            "actual_regime": "BEARISH",
+            "strategy": "SHORT_SYNTHETIC_FUTURE",
+            "median": 0.001384657172220004,
+            "mean": 0.0023610126941350017,
+            "count": 48
+          },
+          {
+            "actual_regime": "BEARISH",
+            "strategy": "SHORT_CALL",
+            "median": 0.00075164142352,
+            "mean": 0.000890780824864375,
+            "count": 48
+          },
+          {
+            "actual_regime": "BEARISH",
+            "strategy": "LONG_PUT",
+            "median": 0.00071345127489,
+            "mean": 0.0014702318692706268,
+            "count": 48
+          }
+        ],
+        "RANGE_BOUND": [
+          {
+            "actual_regime": "RANGE_BOUND",
+            "strategy": "SHORT_STRADDLE",
+            "median": 0.001137131389319993,
+            "mean": 0.0010426144133262993,
+            "count": 27
+          },
+          {
+            "actual_regime": "RANGE_BOUND",
+            "strategy": "SHORT_STRANGLE",
+            "median": 0.0006294587116300001,
+            "mean": 0.0006733375215685185,
+            "count": 27
+          },
+          {
+            "actual_regime": "RANGE_BOUND",
+            "strategy": "SHORT_PUT",
+            "median": 0.0006243111931299854,
+            "mean": 0.0006302131459937052,
+            "count": 27
+          }
+        ]
+      },
+      "selected_summary": {
+        "trades": 153,
+        "net_pnl": -10084.700942799984,
+        "return": -0.10084700942799983,
+        "win_rate": 0.39215686274509803,
+        "max_drawdown": -0.10905475765738348,
+        "profit_factor": 0.2783805588345164,
+        "median_trade": -28.549988313001457
+      }
+    },
+    {
+      "window": 4,
+      "train_rows": 157,
+      "test_rows": 52,
+      "strategy_map": {
+        "BULLISH": [
+          {
+            "actual_regime": "BULLISH",
+            "strategy": "LONG_SYNTHETIC_FUTURE",
+            "median": 0.0018098120022699965,
+            "mean": 0.0020709469452588015,
+            "count": 75
+          },
+          {
+            "actual_regime": "BULLISH",
+            "strategy": "LONG_CALL",
+            "median": 0.0009208354070200148,
+            "mean": 0.0011779898774377346,
+            "count": 75
+          },
+          {
+            "actual_regime": "BULLISH",
+            "strategy": "RANGE_FORWARD",
+            "median": 0.0007727779313299963,
+            "mean": 0.0010899570906665345,
+            "count": 75
+          }
+        ],
+        "BEARISH": [
+          {
+            "actual_regime": "BEARISH",
+            "strategy": "SHORT_SYNTHETIC_FUTURE",
+            "median": 0.001174782167604998,
+            "mean": 0.0018263233393993746,
+            "count": 48
+          },
+          {
+            "actual_regime": "BEARISH",
+            "strategy": "SHORT_CALL",
+            "median": 0.0005076094405300001,
+            "mean": 0.0006412489731370834,
+            "count": 48
+          },
+          {
+            "actual_regime": "BEARISH",
+            "strategy": "LONG_PUT",
+            "median": 0.0004765383354549981,
+            "mean": 0.0011850743662622913,
+            "count": 48
+          }
+        ],
+        "RANGE_BOUND": [
+          {
+            "actual_regime": "RANGE_BOUND",
+            "strategy": "SHORT_STRADDLE",
+            "median": 0.0009530003147400071,
+            "mean": 0.0009149555552096997,
+            "count": 33
+          },
+          {
+            "actual_regime": "RANGE_BOUND",
+            "strategy": "SHORT_PUT",
+            "median": 0.0006515925385700146,
+            "mean": 0.0006604112060303039,
+            "count": 33
+          },
+          {
+            "actual_regime": "RANGE_BOUND",
+            "strategy": "SHORT_STRANGLE",
+            "median": 0.00038043629953999985,
+            "mean": 0.0005573294089824245,
+            "count": 33
+          }
+        ]
+      },
+      "selected_summary": {
+        "trades": 156,
+        "net_pnl": -9902.478522476977,
+        "return": -0.09902478522476976,
+        "win_rate": 0.48717948717948717,
+        "max_drawdown": -0.10549517082958182,
+        "profit_factor": 0.480754534059149,
+        "median_trade": -14.232957123998887
+      }
+    },
+    {
+      "window": 5,
+      "train_rows": 156,
+      "test_rows": 54,
+      "strategy_map": {
+        "BULLISH": [
+          {
+            "actual_regime": "BULLISH",
+            "strategy": "LONG_SYNTHETIC_FUTURE",
+            "median": 0.0019132216895600069,
+            "mean": 0.002183932526371906,
+            "count": 63
+          },
+          {
+            "actual_regime": "BULLISH",
+            "strategy": "SHORT_PUT",
+            "median": 0.00098968489159,
+            "mean": 0.0010179006192950794,
+            "count": 63
+          },
+          {
+            "actual_regime": "BULLISH",
+            "strategy": "RANGE_FORWARD",
+            "median": 0.0009750893007700002,
+            "mean": 0.0011712940873582546,
+            "count": 63
+          }
+        ],
+        "BEARISH": [
+          {
+            "actual_regime": "BEARISH",
+            "strategy": "SHORT_SYNTHETIC_FUTURE",
+            "median": 0.0010576257162299854,
+            "mean": 0.0020191988367829626,
+            "count": 54
+          },
+          {
+            "actual_regime": "BEARISH",
+            "strategy": "SHORT_CALL",
+            "median": 0.000548780480605,
+            "mean": 0.0006673401378714815,
+            "count": 54
+          },
+          {
+            "actual_regime": "BEARISH",
+            "strategy": "LONG_PUT",
+            "median": 0.00044550696822499635,
+            "mean": 0.0013518586989114813,
+            "count": 54
+          }
+        ],
+        "RANGE_BOUND": [
+          {
+            "actual_regime": "RANGE_BOUND",
+            "strategy": "SHORT_STRADDLE",
+            "median": 0.0011930239454700075,
+            "mean": 0.001167436917330005,
+            "count": 38
+          },
+          {
+            "actual_regime": "RANGE_BOUND",
+            "strategy": "SHORT_PUT",
+            "median": 0.0008846363590350001,
+            "mean": 0.0008803684410497391,
+            "count": 38
+          },
+          {
+            "actual_regime": "RANGE_BOUND",
+            "strategy": "SHORT_STRANGLE",
+            "median": 0.0007123836813550036,
+            "mean": 0.0008422127503552641,
+            "count": 38
+          }
+        ]
+      },
+      "selected_summary": {
+        "trades": 159,
+        "net_pnl": -6450.096556823004,
+        "return": -0.06450096556823004,
+        "win_rate": 0.4591194968553459,
+        "max_drawdown": -0.07525502516162741,
+        "profit_factor": 0.5578252797081176,
+        "median_trade": -14.337802198001441
+      }
+    },
+    {
+      "window": 6,
+      "train_rows": 158,
+      "test_rows": 13,
+      "strategy_map": {
+        "BULLISH": [
+          {
+            "actual_regime": "BULLISH",
+            "strategy": "LONG_SYNTHETIC_FUTURE",
+            "median": 0.00195104675117,
+            "mean": 0.002478195443474913,
+            "count": 57
+          },
+          {
+            "actual_regime": "BULLISH",
+            "strategy": "LONG_CALL",
+            "median": 0.0012887092865199856,
+            "mean": 0.0014569132560570185,
+            "count": 57
+          },
+          {
+            "actual_regime": "BULLISH",
+            "strategy": "RANGE_FORWARD",
+            "median": 0.0010245205315800143,
+            "mean": 0.0014241495849463168,
+            "count": 57
+          }
+        ],
+        "BEARISH": [
+          {
+            "actual_regime": "BEARISH",
+            "strategy": "SHORT_SYNTHETIC_FUTURE",
+            "median": 0.0008738190758700071,
+            "mean": 0.0016225701385156584,
+            "count": 53
+          },
+          {
+            "actual_regime": "BEARISH",
+            "strategy": "SHORT_CALL",
+            "median": 0.00051160178381,
+            "mean": 0.0005823811338943396,
+            "count": 53
+          },
+          {
+            "actual_regime": "BEARISH",
+            "strategy": "LONG_PUT",
+            "median": 0.00021870375742999285,
+            "mean": 0.001040189004621319,
+            "count": 53
+          }
+        ],
+        "RANGE_BOUND": [
+          {
+            "actual_regime": "RANGE_BOUND",
+            "strategy": "SHORT_STRADDLE",
+            "median": 0.0010286467117900002,
+            "mean": 0.001163926226304348,
+            "count": 46
+          },
+          {
+            "actual_regime": "RANGE_BOUND",
+            "strategy": "SHORT_PUT",
+            "median": 0.0008168114570000073,
+            "mean": 0.0008528218673934787,
+            "count": 46
+          },
+          {
+            "actual_regime": "RANGE_BOUND",
+            "strategy": "SHORT_STRANGLE",
+            "median": 0.0006650584515700072,
+            "mean": 0.0008564481837393487,
+            "count": 46
+          }
+        ]
+      },
+      "selected_summary": {
+        "trades": 36,
+        "net_pnl": -5110.856129047975,
+        "return": -0.05110856129047975,
+        "win_rate": 0.3333333333333333,
+        "max_drawdown": -0.04766316954315841,
+        "profit_factor": 0.2810677708575694,
+        "median_trade": -147.14602415749854
+      }
+    }
+  ],
+  "walk_forward_selected_summary": {
+    "trades": 819,
+    "net_pnl": -48517.14595725195,
+    "return": -0.4851714595725195,
+    "win_rate": 0.4481074481074481,
+    "max_drawdown": -0.4947670889426681,
+    "profit_factor": 0.4599574543381577,
+    "median_trade": -21.313697376998533
+  },
+  "70_30": {
+    "train_rows": 399,
+    "selected_summary": {
+      "trades": 432,
+      "net_pnl": -20733.70386557396,
+      "return": -0.2073370386557396,
+      "win_rate": 0.5231481481481481,
+      "max_drawdown": -0.21375357924594385,
+      "profit_factor": 0.5505657403371256,
+      "median_trade": 11.336554163000002
+    },
+    "mapping": {
+      "BULLISH": [
+        {
+          "actual_regime": "BULLISH",
+          "strategy": "LONG_SYNTHETIC_FUTURE",
+          "median": 0.001545975133819991,
+          "mean": 0.001828181871110739,
+          "count": 122
+        },
+        {
+          "actual_regime": "BULLISH",
+          "strategy": "LONG_CALL",
+          "median": 0.000750926195634991,
+          "mean": 0.0010261166611024602,
+          "count": 122
+        },
+        {
+          "actual_regime": "BULLISH",
+          "strategy": "SHORT_PUT",
+          "median": 0.0006865163237649999,
+          "mean": 0.0008020652100082787,
+          "count": 122
+        }
+      ],
+      "BEARISH": [
+        {
+          "actual_regime": "BEARISH",
+          "strategy": "SHORT_SYNTHETIC_FUTURE",
+          "median": 0.0012794209002750018,
+          "mean": 0.002021487435149233,
+          "count": 78
+        },
+        {
+          "actual_regime": "BEARISH",
+          "strategy": "SHORT_CALL",
+          "median": 0.0006406043760450001,
+          "mean": 0.0007481801130801283,
+          "count": 78
+        },
+        {
+          "actual_regime": "BEARISH",
+          "strategy": "LONG_PUT",
+          "median": 0.0006315038802200036,
+          "mean": 0.0012733073220691042,
+          "count": 78
+        }
+      ],
+      "RANGE_BOUND": [
+        {
+          "actual_regime": "RANGE_BOUND",
+          "strategy": "SHORT_STRADDLE",
+          "median": 0.0006080272374100002,
+          "mean": 0.0007596548797849035,
+          "count": 51
+        },
+        {
+          "actual_regime": "RANGE_BOUND",
+          "strategy": "SHORT_PUT",
+          "median": 0.0004532137633400001,
+          "mean": 0.0005267629207905889,
+          "count": 51
+        },
+        {
+          "actual_regime": "RANGE_BOUND",
+          "strategy": "SHORT_CALL",
+          "median": 0.0002078306898399927,
+          "mean": 0.00023289195899431445,
+          "count": 51
+        }
+      ]
+    }
+  },
+  "new_oos": {
+    "start": "2026-04-01",
+    "selected_summary": {
+      "trades": 75,
+      "net_pnl": -4271.109193830009,
+      "return": -0.04271109193830009,
+      "win_rate": 0.4266666666666667,
+      "max_drawdown": -0.053097292394215456,
+      "profit_factor": 0.4790739007095863,
+      "median_trade": -32.92842619999854
+    },
+    "mapping": {
+      "BULLISH": [
+        {
+          "actual_regime": "BULLISH",
+          "strategy": "LONG_SYNTHETIC_FUTURE",
+          "median": 0.0017653999162950019,
+          "mean": 0.0020874202760230243,
+          "count": 172
+        },
+        {
+          "actual_regime": "BULLISH",
+          "strategy": "LONG_CALL",
+          "median": 0.0009007462142950074,
+          "mean": 0.0011911724650937219,
+          "count": 172
+        },
+        {
+          "actual_regime": "BULLISH",
+          "strategy": "SHORT_PUT",
+          "median": 0.00079905049997,
+          "mean": 0.0008962478109293023,
+          "count": 172
+        }
+      ],
+      "BEARISH": [
+        {
+          "actual_regime": "BEARISH",
+          "strategy": "SHORT_SYNTHETIC_FUTURE",
+          "median": 0.0013066276727700071,
+          "mean": 0.001996405485533684,
+          "count": 133
+        },
+        {
+          "actual_regime": "BEARISH",
+          "strategy": "LONG_PUT",
+          "median": 0.0006873354588299999,
+          "mean": 0.0012667294544583458,
+          "count": 133
+        },
+        {
+          "actual_regime": "BEARISH",
+          "strategy": "SHORT_CALL",
+          "median": 0.0005924467352300001,
+          "mean": 0.0007296760310753383,
+          "count": 133
+        }
+      ],
+      "RANGE_BOUND": [
+        {
+          "actual_regime": "RANGE_BOUND",
+          "strategy": "SHORT_STRADDLE",
+          "median": 0.0008697829083749984,
+          "mean": 0.00097497797704189,
+          "count": 90
+        },
+        {
+          "actual_regime": "RANGE_BOUND",
+          "strategy": "SHORT_PUT",
+          "median": 0.0006522810896400146,
+          "mean": 0.0006794569689038897,
+          "count": 90
+        },
+        {
+          "actual_regime": "RANGE_BOUND",
+          "strategy": "SHORT_STRANGLE",
+          "median": 0.0004794963171750001,
+          "mean": 0.0006258272427972227,
+          "count": 90
+        }
+      ]
+    }
+  },
+  "selection_policy": "For each predicted regime, recruit the top 3 strategies by median return_on_capital learned only from the training sample; require 20 regime samples.",
+  "oos_policy": "2026-04-01 onward is held out from all V6 model/strategy selection."
+}
