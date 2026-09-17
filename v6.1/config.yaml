@@ -1,0 +1,11 @@
+capital: 100000
+regime_threshold: 0.005
+rolling_train_years: 3
+random_state: 42
+pre_oos_start: '2017-01-01'
+new_oos_start: '2026-04-01'
+history_end: '2026-09-16'
+n_estimators: 400
+max_depth: 8
+min_samples_leaf: 8
+prediction_interval: 0.90
