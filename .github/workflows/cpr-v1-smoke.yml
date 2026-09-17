@@ -3,6 +3,9 @@ name: CPR v1.0 Smoke Backtest
 on:
   push:
     branches: ["CPR-v1.0"]
+  schedule:
+    # Run after the NSE session on weekdays (22:30 IST / 17:00 UTC).
+    - cron: "0 17 * * 1-5"
   workflow_dispatch:
 
 jobs:
