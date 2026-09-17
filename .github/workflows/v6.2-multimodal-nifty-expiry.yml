@@ -18,16 +18,11 @@ concurrency:
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 jobs:
   research:
     runs-on: ubuntu-latest
     timeout-minutes: 360
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     env:
       PYTHONUNBUFFERED: '1'
       PYTHONPATH: '.'
@@ -120,7 +115,6 @@ jobs:
           o=pd.read_csv(root/'new_oos_predictions.csv')
           assert len(o)>0
           assert (pd.to_datetime(o['expiry']) <= pd.Timestamp('2026-09-16')).all()
-          assert (pd.to_datetime(o['signal_date']) < pd.Timestamp('2026-04-01')).any() or len(o)>0
           print(json.dumps({'samples':s['sample_count'],'features':s['feature_count'],'selected_model':s['selected_production_model'],'latest_forecast':latest,'new_oos_metrics':s['new_oos']},indent=2))
           PY
 
@@ -133,7 +127,7 @@ jobs:
           git pull --rebase origin v6.2-multimodal-nifty-expiry
           git push origin v6.2-multimodal-nifty-expiry
 
-      - name: Prepare GitHub Pages site
+      - name: Prepare Pages site
         run: |
           mkdir -p _site
           cp v6.2/research/latest_forecast.json _site/latest_forecast.json
@@ -149,14 +143,21 @@ jobs:
           open('_site/index.html','w').write(page)
           PY
 
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
-
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: _site
 
-      - name: Deploy Pages
+  pages:
+    needs: research
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
