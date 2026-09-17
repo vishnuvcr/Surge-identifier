@@ -1,0 +1,142 @@
+name: V6.1 NIFTY Prediction Research
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [v6.1-nifty-prediction]
+    paths:
+      - 'v6.1/**'
+      - 'scripts/download_v5_market_context.py'
+      - 'scripts/download_v5_flow_context.py'
+      - 'scripts/download_nifty_nse_history.py'
+      - '.github/workflows/v6.1-nifty-prediction.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: v6.1-nifty-prediction
+  cancel-in-progress: true
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      PYTHONUNBUFFERED: '1'
+      PYTHONPATH: '.'
+      NSE_HISTORY_START: '2015-01-01'
+      NSE_HISTORY_END: '2026-09-16'
+      NSE_HISTORY_WORKERS: '5'
+      HF_NEWS_URL: 'https://huggingface.co/datasets/mveen3/Six_Year_Indian_Stock_Market_Dataset-News_and_Ticker/resolve/394913e6b62d643b6449538cf6d70f7f36bd0678/dataset/news_sentiment.csv?download=true'
+    steps:
+      - name: Checkout V6.1 branch
+        uses: actions/checkout@v4
+        with:
+          ref: v6.1-nifty-prediction
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Independent V6.1 inspector
+        run: python v6.1/inspector.py
+
+      - name: Preflight
+        run: |
+          python -m py_compile v6.1/nifty_prediction_engine.py v6.1/inspector.py
+          python - <<'PY'
+          import yaml
+          cfg=yaml.safe_load(open('v6.1/config.yaml'))
+          assert cfg['new_oos_start'] == '2026-04-01'
+          assert cfg['history_end'] == '2026-09-16'
+          assert 0 < cfg['prediction_interval'] < 1
+          print('V6.1 config OK')
+          PY
+
+      - name: Download complete NIFTY options and futures history
+        run: python scripts/download_nifty_nse_history.py
+
+      - name: Download market context
+        run: python scripts/download_v5_market_context.py
+
+      - name: Download FII/DII/PCR context
+        run: python scripts/download_v5_flow_context.py
+
+      - name: Download historical news sentiment
+        run: |
+          mkdir -p data/cache
+          python - <<'PY'
+          import os, requests
+          u=os.environ['HF_NEWS_URL']
+          out='data/cache/v5_news_daily.csv'
+          r=requests.get(u,timeout=120,headers={'User-Agent':'V6.1-research/1.0'})
+          r.raise_for_status()
+          open(out,'wb').write(r.content)
+          print('news bytes',len(r.content))
+          PY
+
+      - name: Normalize news schema
+        run: |
+          python - <<'PY'
+          import pandas as pd
+          p='data/cache/v5_news_daily.csv'
+          n=pd.read_csv(p)
+          n.columns=[str(c).strip().lower() for c in n.columns]
+          assert 'date' in n.columns
+          n.to_csv(p,index=False)
+          print(list(n.columns))
+          PY
+
+      - name: Validate inputs
+        run: |
+          test -s data/cache/nifty_options_long.parquet
+          test -s data/cache/nifty_futures_long.parquet
+          test -s data/cache/v5_market_context.parquet
+          test -s data/cache/v5_flow_context.parquet
+          test -s data/cache/v5_news_daily.csv
+
+      - name: Run V6.1 NIFTY prediction research
+        run: python v6.1/nifty_prediction_engine.py
+
+      - name: Validate V6.1 outputs
+        run: |
+          test -s v6.1/research/summary.json
+          test -s v6.1/research/latest_forecast.json
+          test -s v6.1/research/walk_forward_model_metrics.csv
+          test -s v6.1/research/split_70_30_model_metrics.csv
+          test -s v6.1/research/new_oos_model_metrics.csv
+          test -s v6.1/research/new_oos_predictions.csv
+          python - <<'PY'
+          import json, pandas as pd
+          s=json.load(open('v6.1/research/summary.json'))
+          assert s['sample_count'] >= 150
+          assert s['target'] == 'NIFTY next-expiry close and return'
+          o=pd.read_csv('v6.1/research/new_oos_predictions.csv')
+          assert len(o) > 0
+          assert (pd.to_datetime(o['expiry']) <= pd.Timestamp('2026-09-16')).all()
+          latest=json.load(open('v6.1/research/latest_forecast.json'))
+          assert latest['available'] is True
+          assert latest['next_expiry'] > '2026-09-16'
+          print(json.dumps({'samples':s['sample_count'],'selected_model':s['selected_production_model'],'latest_forecast':latest,'new_oos_metrics':s['new_oos']},indent=2))
+          PY
+
+      - name: Commit V6.1 prediction results
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add v6.1/research
+          git diff --cached --quiet || git commit -m 'Publish V6.1 NIFTY prediction research results'
+          git pull --rebase origin v6.1-nifty-prediction
+          git push origin v6.1-nifty-prediction
+
+      - name: Upload V6.1 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: v6.1-nifty-prediction-research
+          path: v6.1/research/
