@@ -24,6 +24,7 @@ jobs:
     timeout-minutes: 360
     env:
       PYTHONUNBUFFERED: '1'
+      PYTHONPATH: '.'
       NSE_HISTORY_START: '2015-01-01'
       NSE_HISTORY_END: '2026-09-16'
       NSE_HISTORY_WORKERS: '5'
