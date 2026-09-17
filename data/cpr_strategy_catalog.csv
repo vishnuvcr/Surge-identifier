@@ -1,12 +1,13 @@
 strategy_id,url,known_title_or_context,rule_status,asset_classes
-CPR01,https://youtu.be/gJDe4H7C_oI,Most Powerful CPR strategy - Find perfect Breakouts and Reversal,NEEDS_TRANSCRIPT,INTRADAY_LONG_SHORT|BTST|SWING|OPTIONS
-CPR02,https://youtu.be/jip0tBDHLHM,Secrets of Price Action Trading | CPR Strategy,NEEDS_TRANSCRIPT,INTRADAY_LONG_SHORT|BTST|SWING|OPTIONS
-CPR03,https://youtu.be/DEJk1kUJo68,Video title not independently retrievable,NEEDS_TRANSCRIPT,INTRADAY_LONG_SHORT|BTST|SWING|OPTIONS
-CPR04,https://youtu.be/fWFK-Gn0AiE,3 Common Mistakes Using Candlestick Patterns That Ruin Your Trading,NEEDS_TRANSCRIPT,INTRADAY_LONG_SHORT|BTST|SWING|OPTIONS
-CPR05,https://youtu.be/1qgI1qOfJaI,Video title not independently retrievable,NEEDS_TRANSCRIPT,INTRADAY_LONG_SHORT|BTST|SWING|OPTIONS
-CPR06,https://youtu.be/xIXI0NKTygg,Why Virgin CPR Beats Average Trading Strategies Every Time,NEEDS_TRANSCRIPT,INTRADAY_LONG_SHORT|BTST|SWING|OPTIONS
-CPR07,https://youtu.be/Q1Pq2LYQ8fM,Video title not independently retrievable,NEEDS_TRANSCRIPT,INTRADAY_LONG_SHORT|BTST|SWING|OPTIONS
-CPR08,https://youtu.be/Fvem1Ai2Z8w,Video title not independently retrievable,NEEDS_TRANSCRIPT,INTRADAY_LONG_SHORT|BTST|SWING|OPTIONS
-CPR09,https://youtu.be/x_VT3HALjB8,Video title not independently retrievable,NEEDS_TRANSCRIPT,INTRADAY_LONG_SHORT|BTST|SWING|OPTIONS
-CPR10,https://youtu.be/pUOoDLdJSA4,Video title not independently retrievable,NEEDS_TRANSCRIPT,INTRADAY_LONG_SHORT|BTST|SWING|OPTIONS
-CPR11,https://youtu.be/0_349o_Y7O4,Video title not independently retrievable,NEEDS_TRANSCRIPT,INTRADAY_LONG_SHORT|BTST|SWING|OPTIONS
+CPR01,https://youtu.be/gJDe4H7C_oI,Most Powerful CPR strategy - Find perfect Breakouts and Reversal,TRANSCRIPT_RECEIVED,INTRADAY_LONG_SHORT|BTST|SWING
+CPR02,https://youtu.be/jip0tBDHLHM,Powerful Weekly CPR Strategy that works!,TRANSCRIPT_RECEIVED,INTRADAY_LONG_SHORT|BTST|SWING
+CPR03,https://youtu.be/DEJk1kUJo68,The ABSOLUTE BEST Indicator for Perfect Market Levels,TRANSCRIPT_RECEIVED,INTRADAY_LONG_SHORT|BTST|SWING
+CPR04,https://youtu.be/fWFK-Gn0AiE,Master Candlesticks trading today | CPR Strategy,TRANSCRIPT_RECEIVED,INTRADAY_LONG_SHORT|BTST|SWING
+CPR05,https://youtu.be/1qgI1qOfJaI,SHOCKING Truth About Breakout Methods EXPOSED,TRANSCRIPT_RECEIVED,INTRADAY_LONG_SHORT|BTST|SWING
+CPR06,https://youtu.be/xIXI0NKTygg,Why Virgin CPR Beats Average Trading Strategies Every Time,TRANSCRIPT_RECEIVED,INTRADAY_LONG_SHORT|BTST|SWING
+CPR07,https://youtu.be/Q1Pq2LYQ8fM,CPR Mean Reversion Strategy - Trend Reversal, Virgin, Camarilla CPR,TRANSCRIPT_RECEIVED,INTRADAY_LONG_SHORT|BTST|SWING
+CPR08,https://youtu.be/Fvem1Ai2Z8w,CPR Indicator Breakout Trading - Narrow, Inside, Ascending, Descending CPR,TRANSCRIPT_RECEIVED,INTRADAY_LONG_SHORT|BTST|SWING
+CPR09,https://youtu.be/x_VT3HALjB8,CPR trading strategy in Tamil | Trading Tamil | CPR strategy Tamil,TRANSCRIPT_RECEIVED,INTRADAY_LONG_SHORT|BTST|SWING|OPTIONS
+CPR10,https://youtu.be/pUOoDLdJSA4,Important CPR Indicator STRATEGIES a Trader should know,TRANSCRIPT_RECEIVED,INTRADAY_LONG_SHORT|BTST|SWING
+CPR11,https://youtu.be/0_349o_Y7O4,CPR Indicator | Pivot Point trading strategy | CPR strategy | All Strategies,TRANSCRIPT_RECEIVED,INTRADAY_LONG_SHORT|BTST|SWING
+CPR12,https://youtu.be/jzSV1IiDwAc,I Backtested CPR Strategy for Weeks — The Results Will Shock You!,TRANSCRIPT_RECEIVED,INTRADAY_LONG_SHORT|BTST
