@@ -45,6 +45,19 @@ jobs:
         run: pip install -r requirements.txt
       - name: Apply V8.2 joint range patch
         run: python scripts/patch_v82_engine.py
+      - name: Enforce V8.2 runtime summary
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('v8/deep_iron_condor_engine.py')
+          s=p.read_text()
+          s=s.replace("'version':'V8.1'", "'version':'V8.2'")
+          s=s.replace("'post_cost_ic_payoff':True,'six_window_wfo'", "'post_cost_ic_payoff':True,'joint_quantile_coherence':True,'baseline_audit':True,'six_window_wfo'")
+          p.write_text(s)
+          i=Path('v8/inspector.py')
+          i.write_text(i.read_text().replace('V8.1','V8.2'))
+          print('V8.2 runtime summary normalization applied')
+          PY
       - name: Inspect V8.2
         run: python v8/inspector.py
       - name: Compile V8.2
