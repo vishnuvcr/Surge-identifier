@@ -85,6 +85,7 @@ jobs:
       - name: Run CPR strategy smoke backtest
         env:
           PYTHONUNBUFFERED: '1'
+          PYTHONWARNINGS: 'ignore::FutureWarning'
         run: |
           python scripts/run_cpr_v1_backtest.py \
             --data-dir data/cpr_v1/intraday \
