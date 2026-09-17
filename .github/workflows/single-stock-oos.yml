@@ -48,6 +48,7 @@ env:
   TEST_COST: '8'
   TEST_SLIPPAGE: '3'
   TEST_RISK: '0.01'
+  PYTHONPATH: ${{ github.workspace }}
 
 jobs:
   oos:
@@ -63,6 +64,16 @@ jobs:
           python-version: '3.11'
 
       - run: pip install -r requirements.txt
+
+      - name: Verify Python import path
+        run: |
+          python - <<'PY'
+          import sys
+          import src
+          print('PYTHONPATH OK')
+          print('cwd:', __import__('os').getcwd())
+          print('sys.path[0]:', sys.path[0])
+          PY
 
       - name: Run single-stock nested walk-forward OOS
         run: |
