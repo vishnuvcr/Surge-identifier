@@ -1,0 +1,60 @@
+# CPR v1.0 research configuration
+# Transcript-derived rules are tested separately; ambiguous parameters remain explicit.
+universe_sets:
+  - NIFTY50
+  - NIFTY100
+  - NIFTY500
+
+execution:
+  timeframe: 5min
+  entry_session_start: '09:20'
+  last_new_entry: '15:00'
+  force_exit: '15:25'
+  initial_capital_inr: 100000
+  max_position_fraction: 0.50
+  max_risk_fraction_per_trade: 0.01
+  slippage_bps_per_side: 3
+  transaction_cost_bps_per_side: 8
+
+walk_forward:
+  train_days: 504
+  test_days: 21
+  step_days: 21
+  final_oos_fraction: 0.20
+
+cpr_width:
+  narrow_pct_of_prev_day_range: 0.15
+  medium_pct_of_prev_day_range: 0.30
+  single_line_pct_of_prev_day_range: 0.03
+
+signals:
+  candle_break_buffer_bps: 2
+  reversal_confirmation: close_through_level
+  virgin_max_age_sessions: 3
+  trend_timeframe: 60min
+
+risk_exit_modes:
+  - structure
+  - atr
+  - cpr
+
+options:
+  enabled: true
+  strategy: short_strangle
+  premium_stop_pct: 10
+  strike_selection: configurable
+  expiry_selection: configurable
+  lot_size_source: point_in_time_contract_master
+
+backtest_policy:
+  optimize_parameters: false
+  no_future_labels_in_features: true
+  report_gross_and_net: true
+  report_monthly_and_weekly_returns: true
+  report_max_drawdown: true
+  report_profit_factor: true
+  report_expectancy: true
+  report_trade_count: true
+  report_long_short_breakdown: true
+  report_universe_breakdown: true
+  report_strategy_breakdown: true
