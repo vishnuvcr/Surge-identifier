@@ -1,4 +1,5 @@
 name: Single Stock ML Walk-Forward OOS
+# Auto-rerun after strategy syntax fix
 
 on:
   push:
