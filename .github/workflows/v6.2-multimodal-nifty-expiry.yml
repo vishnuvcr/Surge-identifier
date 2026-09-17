@@ -1,0 +1,125 @@
+name: V6.2 Multimodal NIFTY Expiry Research
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - v6.2-multimodal-nifty-expiry
+    paths:
+      - 'v6.2/**'
+      - '.github/workflows/v6.2-multimodal-nifty-expiry.yml'
+      - 'scripts/**'
+      - 'v5/**'
+
+concurrency:
+  group: v6.2-multimodal-nifty-expiry
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      PYTHONUNBUFFERED: '1'
+      PYTHONPATH: '.'
+      NSE_HISTORY_START: '2015-01-01'
+      NSE_HISTORY_END: '2026-09-16'
+      NSE_HISTORY_WORKERS: '5'
+      HF_NEWS_URL: 'https://huggingface.co/datasets/mveen3/Six_Year_Indian_Stock_Market_Dataset-News_and_Ticker/resolve/394913e6b62d643b6449538cf6d70f7f36bd0678/dataset/news_sentiment.csv?download=true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: v6.2-multimodal-nifty-expiry
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Inspect V6.2 specification
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+          assert Path('v6.2/README.md').exists()
+          assert Path('v6.2/research_plan.md').exists()
+          cfg=yaml.safe_load(open('v6.2/config.yaml'))
+          assert cfg['new_oos_start']=='2026-04-01'
+          assert cfg['history_end']=='2026-09-16'
+          assert cfg['features']['use_all_constituents'] is True
+          assert cfg['features']['use_point_in_time_weights'] is True
+          print('V6.2 specification OK')
+          PY
+
+      - name: Compile existing V6.1 engine for baseline availability
+        run: python -m py_compile v6.1/nifty_prediction_engine_v2.py
+
+      - name: Publish research specification
+        run: |
+          mkdir -p v6.2/research
+          cp v6.2/README.md v6.2/research/specification.md
+          cp v6.2/research_plan.md v6.2/research/research_plan.md
+
+      - name: Build research status JSON
+        run: |
+          python - <<'PY'
+          import json, yaml
+          cfg=yaml.safe_load(open('v6.2/config.yaml'))
+          out={
+            'status':'SPECIFICATION_READY',
+            'phase':'V6.2 multimodal research bootstrap',
+            'history_start':cfg['history_start'],
+            'history_end':cfg['history_end'],
+            'new_oos_start':cfg['new_oos_start'],
+            'targets':['next_expiry_return','next_expiry_close','regime','prediction_interval'],
+            'feature_groups':['constituents','technical','fii_dii','futures','options_microstructure','cross_asset','news_sentiment'],
+            'models':['naive','ridge','rf','extra_trees','hist_gradient_boosting','xgboost','lstm','tft'],
+            'options_layer':'separate_from_prediction_validation'
+          }
+          json.dump(out,open('v6.2/research/status.json','w'),indent=2)
+          PY
+
+      - name: Commit V6.2 research specification
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add v6.2/research
+          git diff --cached --quiet || git commit -m 'Publish V6.2 multimodal research specification [skip ci]'
+          git pull --rebase origin v6.2-multimodal-nifty-expiry
+          git push origin v6.2-multimodal-nifty-expiry
+
+      - name: Prepare Pages site
+        run: |
+          mkdir -p _site
+          cat > _site/index.html <<'HTML'
+          <!doctype html>
+          <html><head><meta charset="utf-8"><title>V6.2 NIFTY Expiry Research</title></head>
+          <body style="font-family:Arial,sans-serif;max-width:1000px;margin:40px auto;padding:0 20px">
+          <h1>V6.2 Multimodal NIFTY Expiry Research</h1>
+          <p>Research specification bootstrap. Prediction and options layers are validated separately.</p>
+          <p><a href="specification.md">Specification</a> | <a href="research_plan.md">Research plan</a> | <a href="status.json">Status JSON</a></p>
+          </body></html>
+          HTML
+          cp v6.2/README.md _site/specification.md
+          cp v6.2/research_plan.md _site/research_plan.md
+          cp v6.2/research/status.json _site/status.json
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy Pages
+        uses: actions/deploy-pages@v4
