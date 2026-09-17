@@ -1,0 +1,28 @@
+name: V5.1 Independent Inspector
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout V5.1 branch
+        uses: actions/checkout@v4
+        with:
+          ref: v5.1-regime-adaptive-repair
+
+      - name: Run independent V5.1 inspector
+        run: python v5/independent_inspector.py
+
+      - name: Publish inspector summary
+        if: always()
+        run: |
+          if test -f v5/inspector_report.json; then
+            cat v5/inspector_report.json
+          fi
