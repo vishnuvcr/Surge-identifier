@@ -17,7 +17,7 @@ permissions:
 
 concurrency:
   group: v5.1-regime-adaptive
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   inspector:
@@ -98,8 +98,9 @@ jobs:
           test -s data/cache/v5_news_daily.csv
           python - <<'PY'
           import pandas as pd
-          n=pd.read_csv('data/cache/v5_news_daily.csv', nrows=5)
-          print('news columns:', list(n.columns))
+          p='data/cache/v5_news_daily.csv'
+          n=pd.read_csv(p,nrows=5)
+          print('news columns:',list(n.columns))
           assert 'date' in n.columns
           assert any('news_' in c for c in n.columns)
           PY
@@ -117,16 +118,20 @@ jobs:
           import json, pandas as pd
           s=json.load(open('v5/research/summary.json'))
           t=pd.read_csv('v5/research/oos_trade_ledger.csv')
-          print(json.dumps(s['overall_oos'], indent=2))
-          print('payoff invariant skips:', s.get('payoff_invariant_skips', {}).get('count', 0))
-          print('context key repairs:', s.get('context_key_repairs', {}).get('count', 0))
+          print(json.dumps(s['overall_oos'],indent=2))
+          print('payoff invariant skips:',s.get('payoff_invariant_skips',{}).get('count',0))
+          print('context key repairs:',s.get('context_key_repairs',{}).get('count',0))
+          print('historical feature integrity:',s.get('historical_feature_integrity',{}))
           assert s['max_lots_per_trade']==1
           if len(t):
               assert (t['lots']==1).all()
               assert (t['qty']==t['lot_size']).all()
-              assert (t['gross_pnl'] <= t['theoretical_max_profit'] + t['theoretical_max_profit'].abs()*0.03 + 10).all()
-              assert (t['gross_pnl'] >= t['theoretical_max_loss'] - t['theoretical_max_loss'].abs()*0.03 - 10).all()
-          assert len(s['walk_forward']) == 6
+              assert (t['gross_pnl']<=t['theoretical_max_profit']+t['theoretical_max_profit'].abs()*0.03+10).all()
+              assert (t['gross_pnl']>=t['theoretical_max_loss']-t['theoretical_max_loss'].abs()*0.03-10).all()
+          assert len(s['walk_forward'])==6
+          disabled=set(s.get('historical_feature_integrity',{}).get('disabled_features',[]))
+          expected={'fii_net_z','dii_net_z','fii_fut_long_short','pcr','flow_sentiment'}
+          assert expected.issubset(disabled)
           PY
 
       - name: Commit V5.1 research results
@@ -143,4 +148,3 @@ jobs:
         with:
           name: v5.1-regime-adaptive-research
           path: v5/research/
-          if-no-files-found: error
