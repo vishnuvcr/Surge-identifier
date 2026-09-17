@@ -1,10 +1,10 @@
-name: V8.1 Deep ML Iron Condor Research
+name: V8.2 Joint Range Deep ML Iron Condor Research
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - v8.1-coherent-ic-wfo
+      - v8.2-joint-range-ic
     paths:
       - 'v8/**'
       - 'v6.2/**'
@@ -13,7 +13,7 @@ on:
       - 'requirements.txt'
 
 concurrency:
-  group: v8.1-coherent-ic-wfo
+  group: v8.2-joint-range-ic
   cancel-in-progress: true
 
 permissions:
@@ -34,7 +34,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: v8.1-coherent-ic-wfo
+          ref: v8.2-joint-range-ic
           fetch-depth: 1
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -45,10 +45,12 @@ jobs:
         run: pip install -r requirements.txt
       - name: Apply robust V8.1 datetime merge hotfix
         run: python scripts/patch_v81_engine.py
-      - name: Inspect V8.1
+      - name: Apply V8.2 joint range patch
+        run: python scripts/patch_v82_engine.py
+      - name: Inspect V8.2
         run: python v8/inspector.py
-      - name: Compile V8.1
-        run: python -m py_compile v8/inspector.py v8/deep_iron_condor_engine.py scripts/patch_v81_engine.py
+      - name: Compile V8.2
+        run: python -m py_compile v8/inspector.py v8/deep_iron_condor_engine.py scripts/patch_v81_engine.py scripts/patch_v82_engine.py
       - name: Download NIFTY options and futures history
         run: python scripts/download_nifty_nse_history.py
       - name: Download market context
@@ -67,36 +69,34 @@ jobs:
         run: |
           set -e
           for f in data/cache/nifty_options_long.parquet data/cache/nifty_futures_long.parquet data/cache/v5_market_context.parquet data/cache/v5_news_daily.csv data/cache/v62_nifty50_index.parquet data/cache/v62_constituent_prices.parquet data/cache/v62_constituent_weights.csv data/cache/v62_nifty50_membership.csv data/cache/v62_fii_dii.parquet; do test -s "$f" || { echo "missing $f"; exit 1; }; done
-      - name: Run V8.1 research
+      - name: Run V8.2 research
         run: python v8/deep_iron_condor_engine.py
-      - name: Validate V8.1 objectives and outputs
+      - name: Validate V8.2 objectives and outputs
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
           root=Path('v8/research')
           s=json.load(open(root/'summary.json'))
-          assert s['version']=='V8.1'
-          assert s['wfo_windows_completed'] == s['wfo_windows_required']
+          assert s['version']=='V8.2'
+          assert s['wfo_windows_completed'] == 6
           assert s['objectives']['coherent_range']
+          assert s['objectives']['joint_quantile_coherence']
+          assert s['objectives']['baseline_audit']
           assert s['objectives']['pop_from_expiry_payoff_distribution']
           assert s['objectives']['touch_probability_from_path_distribution']
           assert s['objectives']['post_cost_ic_payoff']
           assert s['objectives']['70_30']
           assert s['objectives']['new_oos']
-          assert (root/'wfo_metrics.csv').exists()
-          assert (root/'split_70_30_metrics.csv').exists()
-          assert (root/'new_oos_metrics.csv').exists()
-          assert (root/'latest_distribution.json').exists()
-          assert (root/'latest_iron_condor.json').exists()
-          assert (root/'status.json').exists()
+          for f in ['wfo_metrics.csv','split_70_30_metrics.csv','new_oos_metrics.csv','latest_distribution.json','latest_iron_condor.json','status.json']:
+              assert (root/f).exists(), f
           print(json.dumps(s,indent=2))
           PY
-      - name: Commit V8.1 research results
+      - name: Commit V8.2 research results
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add v8/research v8/deep_iron_condor_engine.py
-          git diff --cached --quiet || git commit -m 'Publish V8.1 coherent iron condor research results [skip ci]'
-          git pull --rebase origin v8.1-coherent-ic-wfo
-          git push origin v8.1-coherent-ic-wfo
+          git add v8/research v8/deep_iron_condor_engine.py v8/inspector.py
+          git diff --cached --quiet || git commit -m 'Publish V8.2 joint range iron condor research [skip ci]'
+          git pull --rebase origin v8.2-joint-range-ic
+          git push origin v8.2-joint-range-ic
