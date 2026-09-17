@@ -1,0 +1,12 @@
+{
+  "version": "V8",
+  "samples": 4636,
+  "features": 90,
+  "latest_signal_date": "2026-09-15",
+  "next_expiry": "2026-09-22",
+  "spot": 23118.599609375,
+  "candidate_count": 0,
+  "selected_ic": null,
+  "model": "deep_transformer_quantiles",
+  "research_gate": "RESEARCH_ONLY_PENDING_OOS"
+}
