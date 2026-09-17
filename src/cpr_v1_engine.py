@@ -61,11 +61,7 @@ def _prior_period_ohlc(daily: pd.DataFrame, period_col: str) -> pd.DataFrame:
 
 
 def period_levels(intraday: pd.DataFrame, cfg: CPRConfig = CPRConfig()) -> pd.DataFrame:
-    """Attach point-in-time daily/weekly/monthly CPR levels to intraday bars.
-
-    Required columns: timestamp, symbol, open, high, low, close, volume.
-    All levels are derived only from completed prior sessions/periods.
-    """
+    """Attach point-in-time daily/weekly/monthly CPR levels to intraday bars."""
     x = intraday.copy()
     x["timestamp"] = pd.to_datetime(x["timestamp"])
     x["session"] = x["timestamp"].dt.normalize()
@@ -105,6 +101,19 @@ def period_levels(intraday: pd.DataFrame, cfg: CPRConfig = CPRConfig()) -> pd.Da
         dlev[f"virgin_{lag}_low"] = dlev.groupby("symbol")["d_cpr_low"].shift(lag).where(virgin_flag)
         dlev[f"virgin_{lag}_high"] = dlev.groupby("symbol")["d_cpr_high"].shift(lag).where(virgin_flag)
 
+    # Keep only CPR-derived fields in the daily merge. dlev also contains the
+    # source OHLC columns; merging those against intraday OHLC creates pandas
+    # suffixes (close_x/close_y) and removes the plain `close` column expected
+    # by generate_signals().
+    d_merge_cols = [
+        "symbol", "session",
+        "d_pivot", "d_bc", "d_tc", "d_cpr_low", "d_cpr_high",
+        "d_r1", "d_s1", "d_r2", "d_s2", "d_r3", "d_s3",
+        "d_cam_r3", "d_cam_s3", "d_pd_high", "d_pd_low",
+        "d_width", "d_prev_range", "d_width_ratio",
+        "d_ascending", "d_descending", "virgin",
+    ] + [f"virgin_{lag}_{side}" for lag in range(1, cfg.virgin_max_age_sessions + 1) for side in ("low", "high")]
+
     daily["week_period"] = daily["session"].dt.to_period("W-FRI")
     weekly = _prior_period_ohlc(daily, "week_period")
     wlev = _add_width(_levels(weekly, "w_"), "w")
@@ -116,7 +125,7 @@ def period_levels(intraday: pd.DataFrame, cfg: CPRConfig = CPRConfig()) -> pd.Da
     x["week_period"] = x["session"].dt.to_period("W-FRI")
     x["month_period"] = x["session"].dt.to_period("M")
 
-    out = x.merge(dlev, on=["symbol", "session"], how="left")
+    out = x.merge(dlev[d_merge_cols], on=["symbol", "session"], how="left")
     wcols = ["symbol", "week_period", "w_cpr_low", "w_cpr_high", "w_r1", "w_s1", "w_r2", "w_s2", "w_r3", "w_s3", "w_width_ratio"]
     mcols = ["symbol", "month_period", "m_cpr_low", "m_cpr_high", "m_r1", "m_s1", "m_r2", "m_s2", "m_width_ratio"]
     out = out.merge(wlev[wcols], on=["symbol", "week_period"], how="left")
