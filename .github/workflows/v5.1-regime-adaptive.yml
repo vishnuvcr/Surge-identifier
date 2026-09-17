@@ -68,6 +68,21 @@ jobs:
           print('news bytes',len(r.content))
           PY
 
+      - name: Normalize V5.1 news schema
+        run: |
+          python - <<'PY'
+          import pandas as pd
+          p='data/cache/v5_news_daily.csv'
+          n=pd.read_csv(p)
+          n.columns=[str(c).strip().lower() for c in n.columns]
+          if 'date' not in n.columns:
+              raise RuntimeError(f'Missing date column after normalization: {list(n.columns)}')
+          if not any('news_' in c for c in n.columns):
+              raise RuntimeError(f'Missing news_* columns after normalization: {list(n.columns)}')
+          n.to_csv(p,index=False)
+          print('normalized news columns:', list(n.columns))
+          PY
+
       - name: Validate research inputs
         run: |
           test -s data/cache/nifty_options_long.parquet
@@ -79,8 +94,8 @@ jobs:
           import pandas as pd
           n=pd.read_csv('data/cache/v5_news_daily.csv', nrows=5)
           print('news columns:', list(n.columns))
-          assert any(c.lower()=='date' for c in n.columns)
-          assert any('news_' in c.lower() for c in n.columns)
+          assert 'date' in n.columns
+          assert any('news_' in c for c in n.columns)
           PY
 
       - name: Run V5.1 hardened walk-forward
