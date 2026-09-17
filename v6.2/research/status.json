@@ -1,0 +1,33 @@
+{
+  "status": "SPECIFICATION_READY",
+  "phase": "V6.2 multimodal research bootstrap",
+  "history_start": "2015-01-01",
+  "history_end": "2026-09-16",
+  "new_oos_start": "2026-04-01",
+  "targets": [
+    "next_expiry_return",
+    "next_expiry_close",
+    "regime",
+    "prediction_interval"
+  ],
+  "feature_groups": [
+    "constituents",
+    "technical",
+    "fii_dii",
+    "futures",
+    "options_microstructure",
+    "cross_asset",
+    "news_sentiment"
+  ],
+  "models": [
+    "naive",
+    "ridge",
+    "rf",
+    "extra_trees",
+    "hist_gradient_boosting",
+    "xgboost",
+    "lstm",
+    "tft"
+  ],
+  "options_layer": "separate_from_prediction_validation"
+}
