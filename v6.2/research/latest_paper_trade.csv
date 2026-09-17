@@ -1,0 +1,2 @@
+action,lot_size,legs,estimated_max_loss,entry_debit,capital_requirement
+BEAR_PUT_SPREAD,65,"[['BUY', 'PE', 23200.0, 134.1], ['SELL', 'PE', 22950.0, 62.3]]",4667.0,4667.0,4667.0

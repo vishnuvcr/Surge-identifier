@@ -1,0 +1,18 @@
+{
+  "available": true,
+  "signal_date": "2026-09-16",
+  "latest_feature_date": "2026-09-16",
+  "next_expiry": "2026-09-22",
+  "spot": 23217.599609375,
+  "production_model": "ensemble",
+  "predicted_return": -0.0038456490769377466,
+  "predicted_close": 23128.312868868496,
+  "predicted_low": 22615.405309628826,
+  "predicted_high": 23710.60326338593,
+  "regime": "BEARISH",
+  "prediction_interval": 0.9,
+  "calibration_q_low": -0.022091325885065505,
+  "calibration_q_high": 0.025079698345831982,
+  "forecast_feature_date_verified": true,
+  "forecast_type": "fresh_current_cutoff_features"
+}
