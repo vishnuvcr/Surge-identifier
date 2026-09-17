@@ -49,19 +49,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Inspect V6.2 specification
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import yaml
-          assert Path('v6.2/README.md').exists()
-          assert Path('v6.2/research_plan.md').exists()
-          cfg=yaml.safe_load(open('v6.2/config.yaml'))
-          assert cfg['new_oos_start']=='2026-04-01'
-          assert cfg['history_end']=='2026-09-16'
-          assert cfg['features']['use_all_constituents'] is True
-          assert cfg['features']['use_point_in_time_weights'] is True
-          print('V6.2 specification OK')
-          PY
+        run: python v6.2/inspector.py
 
       - name: Compile existing V6.1 engine for baseline availability
         run: python -m py_compile v6.1/nifty_prediction_engine_v2.py
