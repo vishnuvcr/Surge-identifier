@@ -20,12 +20,10 @@ FEATURES = [
 
 def build_direction_targets(frame: pd.DataFrame, target: float, stop: float) -> pd.DataFrame:
     x = frame.copy()
-    # These are next-session intraday barriers measured from the next open.
     x["long_target_hit"] = x["next_open_to_high"] >= target
     x["long_stop_hit"] = x["next_open_to_low"] <= -stop
     x["short_target_hit"] = x["next_open_to_low"] <= -target
     x["short_stop_hit"] = x["next_open_to_high"] >= stop
-    # Direction label is only used inside historical training windows.
     long_edge = x["next_open_to_high"]
     short_edge = -x["next_open_to_low"]
     x["direction_label"] = np.where(
@@ -79,34 +77,64 @@ def walk_forward_direction(
         test = x[x.date.isin(te_dates)].copy()
         if len(test) == 0 or train["direction_label"].nunique() < 2:
             continue
-        clf = HistGradientBoostingClassifier(max_iter=250, learning_rate=0.035, max_leaf_nodes=15, l2_regularization=1.0, random_state=42)
+        clf = HistGradientBoostingClassifier(
+            max_iter=250,
+            learning_rate=0.035,
+            max_leaf_nodes=15,
+            l2_regularization=1.0,
+            random_state=42,
+        )
         clf.fit(train[FEATURES], train["direction_label"])
         prob = clf.predict_proba(test[FEATURES])
         classes = list(clf.classes_)
         p_long = prob[:, classes.index(1)] if 1 in classes else np.zeros(len(test))
         p_short = prob[:, classes.index(-1)] if -1 in classes else np.zeros(len(test))
-        side = np.where((p_long >= probability_gate) & (p_long > p_short), 1, np.where((p_short >= probability_gate) & (p_short > p_long), -1, 0))
+        side = np.where(
+            (p_long >= probability_gate) & (p_long > p_short),
+            1,
+            np.where((p_short >= probability_gate) & (p_short > p_long), -1, 0),
+        )
         p = np.maximum(p_long, p_short)
         out = test[["date", "next_open"]].copy()
-        out["p_long"] = p_long; out["p_short"] = p_short; out["side"] = side; out["trade"] = side != 0
+        out["p_long"] = p_long
+        out["p_short"] = p_short
+        out["side"] = side
+        out["trade"] = side != 0
         preds.append(out)
         for i, (_, r) in enumerate(test.iterrows()):
             if side[i] == 0:
                 continue
             ret, reason = barrier_return(r, int(side[i]), target, stop)
-            trades.append({"date": r["date"], "side": "LONG" if side[i] == 1 else "SHORT", "entry": r["next_open"], "return": ret, "exit_reason": reason, "probability": float(p[i])})
+            trades.append({
+                "date": r["date"],
+                "side": "LONG" if side[i] == 1 else "SHORT",
+                "entry": r["next_open"],
+                "return": ret,
+                "exit_reason": reason,
+                "probability": float(p[i]),
+            })
     predictions = pd.concat(preds, ignore_index=True) if preds else pd.DataFrame()
     td = pd.DataFrame(trades)
     if td.empty:
         return DirectionOOS(predictions, td, {"trade_count": 0})
     r = td["return"].astype(float)
-    eq = (1+r).cumprod()
-    dd = eq/eq.cummax()-1
-    monthly = td.assign(month=pd.to_datetime(td.date).dt.to_period("M")).groupby("month").return.apply(lambda s: (1+s).prod()-1)
+    eq = (1 + r).cumprod()
+    dd = eq / eq.cummax() - 1
+    monthly = (
+        td.assign(month=pd.to_datetime(td["date"]).dt.to_period("M"))
+        .groupby("month")["return"]
+        .apply(lambda s: (1 + s).prod() - 1)
+    )
     metrics = {
-        "trade_count": int(len(td)), "long_trades": int((td.side == "LONG").sum()), "short_trades": int((td.side == "SHORT").sum()),
-        "hit_rate": float((td.exit_reason == "target").mean()), "mean_trade_return": float(r.mean()),
-        "median_trade_return": float(r.median()), "gross_compounded_return": float(eq.iloc[-1]-1),
-        "max_drawdown": float(dd.min()), "monthly_avg_return": float(monthly.mean()), "monthly_median_return": float(monthly.median()),
+        "trade_count": int(len(td)),
+        "long_trades": int((td.side == "LONG").sum()),
+        "short_trades": int((td.side == "SHORT").sum()),
+        "hit_rate": float((td.exit_reason == "target").mean()),
+        "mean_trade_return": float(r.mean()),
+        "median_trade_return": float(r.median()),
+        "gross_compounded_return": float(eq.iloc[-1] - 1),
+        "max_drawdown": float(dd.min()),
+        "monthly_avg_return": float(monthly.mean()),
+        "monthly_median_return": float(monthly.median()),
     }
     return DirectionOOS(predictions, td, metrics)
