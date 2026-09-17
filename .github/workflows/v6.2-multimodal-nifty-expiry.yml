@@ -30,7 +30,7 @@ jobs:
       NSE_HISTORY_END: '2026-09-16'
       NSE_HISTORY_WORKERS: '5'
       V62_PRICE_WORKERS: '8'
-      HF_NEWS_URL: 'https://huggingface.co/datasets/mveen3/Six_Year_Indian_Stock_Market_Dataset-News_and_Ticker/resolve/394913e6b62d643b6449538cf6d70f7f36bd0678/dataset/news_sentiment.csv?download=true'
+      HF_NEWS_URL: 'https://huggingface.co/datasets/mveen3/Six_Year_Indian_Stock_Market_Dataset-News_and_Ticker/resolve/394913e6b62d643b6449538cf6d70f7f36bd067d/dataset/news_sentiment.csv?download=true'
 
     steps:
       - name: Checkout
@@ -52,7 +52,7 @@ jobs:
         run: python v6.2/inspector.py
 
       - name: Compile V6.2 implementation
-        run: python -m py_compile v6.2/download_multimodal_data.py v6.2/multimodal_engine.py v6.2/correct_latest_forecast.py
+        run: python -m py_compile v6.2/download_multimodal_data.py v6.2/multimodal_engine.py v6.2/correct_latest_forecast.py v6.2/run_multimodal_safe.py
 
       - name: Download NIFTY options and futures history
         run: python scripts/download_nifty_nse_history.py
@@ -95,7 +95,7 @@ jobs:
           test -s data/cache/v62_fii_dii.parquet
 
       - name: Run V6.2 multimodal research
-        run: python v6.2/multimodal_engine.py
+        run: python v6.2/run_multimodal_safe.py
 
       - name: Recompute latest forecast from fresh current-cutoff features
         run: python v6.2/correct_latest_forecast.py
