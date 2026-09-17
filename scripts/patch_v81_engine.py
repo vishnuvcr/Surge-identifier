@@ -18,8 +18,7 @@ if old not in s:
 s = s.replace(old, new, 1)
 
 # Ensure the patched engine explicitly advertises the robust implementation for inspection.
-marker = "def strict_asof(left_dates,right,date_col='date'):\n"
-if marker not in s or 'np.searchsorted(right_ns, left_ns, side=' not in s:
+if 'def strict_asof(left_dates, right, date_col=' not in s or 'np.searchsorted(right_ns, left_ns, side=' not in s:
     raise SystemExit('strict_asof patch not present')
 
 ENGINE.write_text(s)
