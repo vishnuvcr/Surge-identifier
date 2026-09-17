@@ -1,0 +1,16 @@
+{
+  "available": true,
+  "signal_date": "2026-09-16",
+  "latest_feature_date": "2026-09-16",
+  "next_expiry": "2026-09-22",
+  "spot": 23272.3,
+  "production_model": "rf",
+  "predicted_return": 0.00019283555696492482,
+  "predicted_close": 23276.787726932354,
+  "predicted_low": 22666.497250320048,
+  "predicted_high": 23753.346704522617,
+  "regime": "RANGE_BOUND",
+  "prediction_interval": 0.9,
+  "calibration_q_low": -0.026223900371355958,
+  "calibration_q_high": 0.020477519522791598
+}

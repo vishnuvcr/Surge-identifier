@@ -1,0 +1,105 @@
+{
+  "sample_count": 444,
+  "target": "NIFTY next-expiry close and return",
+  "history_start": "2015-05-04",
+  "history_end": "2026-09-16",
+  "new_oos_start": "2026-04-01",
+  "selected_production_model": "rf",
+  "walk_forward": {
+    "best_model_by_mean_rmse": "rf"
+  },
+  "split_70_30": [
+    {
+      "model": "ridge",
+      "mae": 0.012167735759025135,
+      "rmse": 0.015479427547582213,
+      "direction_accuracy": 0.5116279069767442,
+      "regime_accuracy": 0.313953488372093,
+      "correlation": -0.0004994503119252448,
+      "samples": 172
+    },
+    {
+      "model": "hgbr",
+      "mae": 0.013686698450472528,
+      "rmse": 0.017811973340565074,
+      "direction_accuracy": 0.5058139534883721,
+      "regime_accuracy": 0.3546511627906977,
+      "correlation": 0.003606232974340283,
+      "samples": 172
+    },
+    {
+      "model": "rf",
+      "mae": 0.01182193653731336,
+      "rmse": 0.01553657377490932,
+      "direction_accuracy": 0.4941860465116279,
+      "regime_accuracy": 0.29651162790697677,
+      "correlation": -0.0003790141375350705,
+      "samples": 172
+    },
+    {
+      "model": "et",
+      "mae": 0.010858901003637806,
+      "rmse": 0.013981441115003908,
+      "direction_accuracy": 0.4941860465116279,
+      "regime_accuracy": 0.27906976744186046,
+      "correlation": 0.04564970418808446,
+      "samples": 172
+    },
+    {
+      "model": "ensemble",
+      "mae": 0.011148819436245794,
+      "rmse": 0.014649029232263099,
+      "direction_accuracy": 0.5174418604651163,
+      "regime_accuracy": 0.3488372093023256,
+      "correlation": 0.007897049608388631,
+      "samples": 172
+    }
+  ],
+  "new_oos": [
+    {
+      "model": "ridge",
+      "mae": 0.013702005540815868,
+      "rmse": 0.0168258297282513,
+      "direction_accuracy": 0.4,
+      "regime_accuracy": 0.2,
+      "correlation": -0.2703537027857532,
+      "samples": 25
+    },
+    {
+      "model": "hgbr",
+      "mae": 0.017156678893987837,
+      "rmse": 0.020056769972772587,
+      "direction_accuracy": 0.4,
+      "regime_accuracy": 0.24,
+      "correlation": 0.0266772553545797,
+      "samples": 25
+    },
+    {
+      "model": "rf",
+      "mae": 0.012227489189640506,
+      "rmse": 0.015681813760277934,
+      "direction_accuracy": 0.48,
+      "regime_accuracy": 0.28,
+      "correlation": 0.017075387631781763,
+      "samples": 25
+    },
+    {
+      "model": "et",
+      "mae": 0.011872501165437574,
+      "rmse": 0.014947308191639343,
+      "direction_accuracy": 0.4,
+      "regime_accuracy": 0.28,
+      "correlation": -0.01971921727928257,
+      "samples": 25
+    },
+    {
+      "model": "ensemble",
+      "mae": 0.012977883125182936,
+      "rmse": 0.015887195087749474,
+      "direction_accuracy": 0.28,
+      "regime_accuracy": 0.28,
+      "correlation": -0.04685867436130295,
+      "samples": 25
+    }
+  ]
+}
