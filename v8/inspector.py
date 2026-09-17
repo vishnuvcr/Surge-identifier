@@ -7,7 +7,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 CFG = yaml.safe_load((ROOT / 'v8/config.yaml').read_text())
 ENGINE = ROOT / 'v8/deep_iron_condor_engine.py'
-assert CFG['version'] == 'V8.1'
+assert CFG['version'] == 'V8.2'
 assert CFG['history_end'] == '2026-09-16'
 assert CFG['new_oos_start'] == '2026-04-01'
 assert int(CFG['purge_days']) > 0
@@ -33,7 +33,7 @@ required = [
 for token in required:
     assert token in src, token
 # Point-in-time protection may be implemented with pandas merge_asof + exact-match exclusion
-# or with the V8.1 robust integer nanosecond searchsorted implementation. The engine must
+# or with the V8.2 robust integer nanosecond searchsorted implementation. The engine must
 # not silently revert to a forward/nearest lookup.
 pit_guard = ('allow_exact_matches=False' in src) or (
     'np.searchsorted(right_ns, left_ns, side=' in src and 'side=' in src
@@ -42,7 +42,7 @@ assert pit_guard, 'strict point-in-time lookup guard missing'
 assert 'merge_asof(' not in src or 'allow_exact_matches=False' in src
 assert 'reward_risk' in src and 'model_profit_probability' in src and 'model_touch_probability' in src
 assert 'slippage_points_per_leg' in src and 'brokerage_per_order' in src
-print('=== V8.1 OBJECTIVE-FIRST INSPECTOR ===')
+print('=== V8.2 OBJECTIVE-FIRST INSPECTOR ===')
 print('blocking_failures=0')
 print(f"reward_risk_floor={CFG['min_ic_reward_risk']}x")
 print(f"wfo_windows={CFG['walk_forward']['windows']}")

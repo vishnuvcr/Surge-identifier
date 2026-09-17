@@ -1,7 +1,7 @@
 {
   "status": "RESEARCH_ONLY_PENDING_STABLE_OOS",
   "summary": {
-    "version": "V8.1",
+    "version": "V8.2",
     "samples": 4636,
     "features": 102,
     "expiry_count": 451,
@@ -22,6 +22,8 @@
       "pop_from_expiry_payoff_distribution": true,
       "touch_probability_from_path_distribution": true,
       "post_cost_ic_payoff": true,
+      "joint_quantile_coherence": true,
+      "baseline_audit": true,
       "six_window_wfo": true,
       "70_30": true,
       "new_oos": true

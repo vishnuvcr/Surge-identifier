@@ -133,10 +133,35 @@ def build_samples(inp):
     return np.stack(X).astype(np.float32),pd.DataFrame(rows).sort_values('signal_date').reset_index(drop=True),gf.columns.tolist()
 
 class ICTransformer(nn.Module):
-    def __init__(self,n_features):
-        super().__init__(); c=CFG['model']; d=int(c['d_model']); self.inp=nn.Linear(n_features,d); enc=nn.TransformerEncoderLayer(d_model=d,nhead=int(c['heads']),dim_feedforward=4*d,dropout=float(c['dropout']),batch_first=True,norm_first=True,activation='gelu'); self.enc=nn.TransformerEncoder(enc,num_layers=int(c['layers'])); self.norm=nn.LayerNorm(d); self.head=nn.Linear(d,21)
-    def forward(self,x):
-        h=self.norm(self.enc(self.inp(x))[:,-1]); raw=self.head(h).view(-1,3,len(Q)); close=torch.sort(raw[:,0],dim=-1).values; down=torch.cumsum(torch.nn.functional.softplus(raw[:,1]),dim=-1); up=torch.cumsum(torch.nn.functional.softplus(raw[:,2]),dim=-1); low=close-down; high=close+up; return torch.stack([low,close,high],dim=1)
+    """Joint coherent quantile head with a shared range anchor.
+
+    One shared low-end anchor is followed by positive increments.  This
+    structurally guarantees low(q) <= close(q) <= high(q) and monotonicity
+    across the configured quantiles.
+    """
+    def __init__(self, n_features):
+        super().__init__()
+        c = CFG['model']; d = int(c['d_model'])
+        self.inp = nn.Linear(n_features, d)
+        enc = nn.TransformerEncoderLayer(d_model=d, nhead=int(c['heads']),
+            dim_feedforward=4*d, dropout=float(c['dropout']), batch_first=True,
+            norm_first=True, activation='gelu')
+        self.enc = nn.TransformerEncoder(enc, num_layers=int(c['layers']))
+        self.norm = nn.LayerNorm(d)
+        self.head = nn.Linear(d, 21)
+        nn.init.zeros_(self.head.bias)
+
+    def forward(self, x):
+        h = self.norm(self.enc(self.inp(x))[:, -1])
+        raw = self.head(h).view(-1, 3, len(Q))
+        anchor = raw[:, 0, :1]
+        low_inc = torch.nn.functional.softplus(raw[:, 0, 1:]) * 0.02 + 1e-5
+        close_gap = torch.nn.functional.softplus(raw[:, 1, :]) * 0.02 + 1e-5
+        high_gap = torch.nn.functional.softplus(raw[:, 2, :]) * 0.02 + 1e-5
+        low = anchor + torch.cat([torch.zeros_like(low_inc[:, :1]), torch.cumsum(low_inc, dim=-1)], dim=-1)
+        close = low + torch.cumsum(close_gap, dim=-1)
+        high = close + torch.cumsum(high_gap, dim=-1)
+        return torch.stack([low, close, high], dim=1)
 
 def pinball(pred,target):
     out=0.0
@@ -144,26 +169,46 @@ def pinball(pred,target):
         e=target-pred[:,k]; out+=torch.maximum((q-1)*e,q*e).mean()
     return out/len(Q)
 
-def fit_model(X,meta):
-    y=meta[['target_return','target_down_exc','target_up_exc']].to_numpy(np.float32); xm=X.reshape(-1,X.shape[-1]).mean(0); xs=X.reshape(-1,X.shape[-1]).std(0); xs=np.where(xs<1e-6,1,xs); Xn=np.clip((X-xm)/xs,-8,8).astype(np.float32); n=len(meta); cut=max(1,int(n*.9)); tr=np.arange(cut); va=np.arange(cut,n) if cut<n else tr; model=ICTransformer(X.shape[-1]); opt=torch.optim.AdamW(model.parameters(),lr=float(CFG['model']['learning_rate']),weight_decay=float(CFG['model']['weight_decay'])); dl=DataLoader(TensorDataset(torch.from_numpy(Xn[tr]),torch.from_numpy(y[tr])),batch_size=int(CFG['model']['batch_size']),shuffle=False); best=1e99; state=None; bad=0
+def fit_model(X, meta):
+    y = meta[['path_low_return', 'target_return', 'path_high_return']].to_numpy(np.float32)
+    xm = X.reshape(-1, X.shape[-1]).mean(0)
+    xs = X.reshape(-1, X.shape[-1]).std(0)
+    xs = np.where(xs < 1e-6, 1, xs)
+    Xn = np.clip((X - xm) / xs, -8, 8).astype(np.float32)
+    n = len(meta); cut = max(1, int(n * .9)); tr = np.arange(cut)
+    va = np.arange(cut, n) if cut < n else tr
+    model = ICTransformer(X.shape[-1])
+    opt = torch.optim.AdamW(model.parameters(), lr=float(CFG['model']['learning_rate']), weight_decay=float(CFG['model']['weight_decay']))
+    dl = DataLoader(TensorDataset(torch.from_numpy(Xn[tr]), torch.from_numpy(y[tr])), batch_size=int(CFG['model']['batch_size']), shuffle=False)
+    best = 1e99; state = None; bad = 0
     for _ in range(int(CFG['model']['epochs'])):
         model.train()
-        for xb,yb in dl:
-            opt.zero_grad(set_to_none=True); pred=model(xb); close=pred[:,1]; down=close-pred[:,0]; up=pred[:,2]-close; loss=pinball(close,yb[:,0])+pinball(down,yb[:,1])+pinball(up,yb[:,2]); loss.backward(); torch.nn.utils.clip_grad_norm_(model.parameters(),float(CFG['model']['gradient_clip'])); opt.step()
+        for xb, yb in dl:
+            opt.zero_grad(set_to_none=True); pred = model(xb)
+            loss = sum(pinball(pred[:, j], yb[:, j]) for j in range(3)) / 3.0
+            if not torch.isfinite(loss): raise RuntimeError('V8.2 non-finite training loss')
+            loss.backward(); torch.nn.utils.clip_grad_norm_(model.parameters(), float(CFG['model']['gradient_clip'])); opt.step()
         model.eval()
         with torch.no_grad():
-            pred=model(torch.from_numpy(Xn[va])); close=pred[:,1]; down=close-pred[:,0]; up=pred[:,2]-close; val=float(pinball(close,torch.from_numpy(y[va,0]))+pinball(down,torch.from_numpy(y[va,1]))+pinball(up,torch.from_numpy(y[va,2])))
-        if val<best-1e-6:best=val; state={k:v.detach().cpu().clone() for k,v in model.state_dict().items()}; bad=0
+            pred = model(torch.from_numpy(Xn[va]))
+            val = float(sum(pinball(pred[:, j], torch.from_numpy(y[va, j])) for j in range(3)) / 3.0)
+        if not np.isfinite(val): raise RuntimeError('V8.2 non-finite validation loss')
+        if val < best - 1e-6: best = val; state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}; bad = 0
         else:
-            bad+=1
-            if bad>=int(CFG['model']['patience']):break
-    if state is not None:model.load_state_dict(state)
-    return model,(xm.astype(np.float32),xs.astype(np.float32))
+            bad += 1
+            if bad >= int(CFG['model']['patience']): break
+    if state is not None: model.load_state_dict(state)
+    return model, (xm.astype(np.float32), xs.astype(np.float32))
 
-def predict(model,norm,X):
-    xm,xs=norm; Xn=np.clip((X-xm)/xs,-8,8).astype(np.float32); model.eval()
-    with torch.no_grad(): raw=model(torch.from_numpy(Xn)).numpy()
-    low=np.minimum(raw[:,0],raw[:,1]); high=np.maximum(raw[:,2],raw[:,1]); return np.stack([low,raw[:,1],high],axis=1)
+def predict(model, norm, X):
+    xm, xs = norm; Xn = np.clip((X - xm) / xs, -8, 8).astype(np.float32); model.eval()
+    with torch.no_grad(): raw = model(torch.from_numpy(Xn)).numpy()
+    if not np.isfinite(raw).all(): raise RuntimeError('V8.2 non-finite prediction')
+    dq = np.diff(raw, axis=2)
+    cross = max(float(np.max(raw[:,0] - raw[:,1])), float(np.max(raw[:,1] - raw[:,2])))
+    if np.any(dq < -1e-6): raise RuntimeError(f'V8.2 quantile monotonicity invariant failed: min_dq={float(dq.min())}')
+    if cross > 1e-6: raise RuntimeError(f'V8.2 cross-range coherence invariant failed: max_cross={cross}')
+    return raw
 
 def sample_q(q):return np.interp(np.linspace(.0025,.9975,400),Q,q)
 def payoff(S,k1,k2,k3,k4,credit):
@@ -195,7 +240,7 @@ def candidate_ladder(date,expiry,spot,book,pred_dist):
         if gross<=0:continue
         entry_cost=costs({'buy_put':lprem,'sell_put':sprem,'sell_call':screm,'buy_call':lcrem},lot,date); credit=gross-entry_cost/lot; width=pw
         if credit<=0 or credit>=width:continue
-        rr=credit/(width-credit); prof=payoff(close_s,lp,sp,sc,lc,credit); pop=float(np.mean(prof>0)); loss=float(np.mean(prof<0)); ev=float(np.mean(prof))*lot; p_lower=float(np.mean(low_s<=sp)); p_upper=float(np.mean(high_s>=sc)); touch=1-(1-p_lower)*(1-p_upper); score=rr*pop*max(0,1-touch)
+        rr=credit/(width-credit); prof=payoff(close_s,lp,sp,sc,lc,credit); pop=float(np.mean(prof>0)); loss=float(np.mean(prof<0)); ev=float(np.mean(prof))*lot; p_lower=float(np.mean(low_s<=sp)); p_upper=float(np.mean(high_s>=sc)); touch=1-(1-p_lower)*(1-p_upper); score=(rr / max(float(CFG.get('preferred_ic_reward_risk', 2.0)), 1e-9))*pop*max(0,1-touch)
         rows.append({'signal_date':str(pd.Timestamp(date).date()),'expiry':str(pd.Timestamp(expiry).date()),'spot':spot,'short_put':sp,'long_put':lp,'short_call':sc,'long_call':lc,'width':width,'gross_credit':gross,'entry_costs':entry_cost,'net_credit':credit,'max_profit':credit*lot,'max_loss':(width-credit)*lot,'reward_risk':rr,'model_profit_probability':pop,'model_loss_probability':loss,'model_touch_probability':touch,'model_expected_pnl':ev,'selection_score':score})
     rows.sort(key=lambda r:(r['selection_score'],r['reward_risk']),reverse=True); return rows
 
@@ -213,8 +258,13 @@ def trade_metrics(df):
     if df is None or df.empty:return {'trades':0,'wins':0,'win_rate':0,'total_pnl':0,'mean_pnl':0,'profit_factor':0,'max_drawdown':0,'avg_reward_risk':0,'avg_model_pop':0,'avg_touch':0,'avg_max_loss':0}
     p=df['realized_pnl'].astype(float); eq=p.cumsum(); dd=(eq.cummax()-eq).max(); gain=p[p>0].sum(); loss=-p[p<0].sum(); return {'trades':len(df),'wins':int((p>0).sum()),'win_rate':float((p>0).mean()),'total_pnl':float(p.sum()),'mean_pnl':float(p.mean()),'profit_factor':float(gain/loss) if loss>0 else (float('inf') if gain>0 else 0),'max_drawdown':float(dd),'avg_reward_risk':float(df['reward_risk'].mean()),'avg_model_pop':float(df['model_profit_probability'].mean()),'avg_touch':float(df['model_touch_probability'].mean()),'avg_max_loss':float(df['max_loss'].mean())}
 
-def pred_metrics(model,norm,X,meta,train_meta):
-    d=predict(model,norm,X); actual=np.column_stack([meta['path_low_return'],meta['target_return'],meta['path_high_return']]).astype(float); q50=d[:,:,3]; mae=np.mean(np.abs(actual-q50),axis=0); naive=np.column_stack([np.full(len(meta),train_meta['path_low_return'].median()),np.full(len(meta),train_meta['target_return'].median()),np.full(len(meta),train_meta['path_high_return'].median())]); nm=np.mean(np.abs(actual-naive),axis=0); return {'model_low_mae':float(mae[0]),'model_close_mae':float(mae[1]),'model_high_mae':float(mae[2]),'naive_low_mae':float(nm[0]),'naive_close_mae':float(nm[1]),'naive_high_mae':float(nm[2]),'close_mae_lift_vs_naive':float(1-mae[1]/nm[1]) if nm[1]>0 else 0}
+def pred_metrics(model, norm, X, meta, train_meta):
+    d = predict(model, norm, X)
+    actual = np.column_stack([meta['path_low_return'], meta['target_return'], meta['path_high_return']]).astype(float)
+    q50 = d[:, :, 3]; mae = np.mean(np.abs(actual - q50), axis=0)
+    med = train_meta[['path_low_return', 'target_return', 'path_high_return']].median().to_numpy(float)
+    naive = np.tile(med, (len(meta), 1)); nm = np.mean(np.abs(actual-naive), axis=0)
+    return {'model_low_mae':float(mae[0]),'model_close_mae':float(mae[1]),'model_high_mae':float(mae[2]),'naive_low_mae':float(nm[0]),'naive_close_mae':float(nm[1]),'naive_high_mae':float(nm[2]),'close_mae_lift_vs_naive':float(1-mae[1]/nm[1]) if nm[1]>0 else 0}
 
 def splits(meta,kind):
     exps=pd.DatetimeIndex(sorted(meta['expiry'].unique()))
@@ -258,10 +308,10 @@ def main():
     split_df=pd.DataFrame(split_rows); split_df[split_df['name'].eq('70_30')].to_csv(OUT/'split_70_30_metrics.csv',index=False); split_df[split_df['name'].eq('new_oos')].to_csv(OUT/'new_oos_metrics.csv',index=False); alltr=pd.concat(split_trades,ignore_index=True) if split_trades else pd.DataFrame()
     alltr[alltr.get('split',pd.Series(dtype=str)).eq('70_30')].to_csv(OUT/'split_70_30_trades.csv',index=False) if not alltr.empty else pd.DataFrame().to_csv(OUT/'split_70_30_trades.csv',index=False); alltr[alltr.get('split',pd.Series(dtype=str)).eq('new_oos')].to_csv(OUT/'new_oos_trades.csv',index=False) if not alltr.empty else pd.DataFrame().to_csv(OUT/'new_oos_trades.csv',index=False)
     latest_model,latest_norm=fit_model(X,meta); latest_pred=predict(latest_model,latest_norm,X[[-1]])[0]; row=meta.iloc[-1]; latest_rows=candidate_ladder(pd.Timestamp(row['signal_date']),pd.Timestamp(row['expiry']),float(row['spot']),book,latest_pred); valid=[r for r in latest_rows if r['reward_risk']>=float(CFG['min_ic_reward_risk']) and r['model_profit_probability']>=float(CFG['min_profit_probability']) and r['model_touch_probability']<=float(CFG['max_touch_probability']) and r['model_loss_probability']<=float(CFG['max_expected_loss_probability']) and r['model_expected_pnl']>0]
-    latest={'signal_date':str(pd.Timestamp(row['signal_date']).date()),'next_expiry':str(pd.Timestamp(row['expiry']).date()),'spot':float(row['spot']),'quantiles':Q.tolist(),'coherent_low_return':latest_pred[0].tolist(),'coherent_close_return':latest_pred[1].tolist(),'coherent_high_return':latest_pred[2].tolist(),'candidate_count':len(valid),'selected_ic':valid[0] if valid else None,'top_candidate_ladder':latest_rows[:15]}; (OUT/'latest_distribution.json').write_text(json.dumps(latest,indent=2)); (OUT/'latest_iron_condor.json').write_text(json.dumps(latest,indent=2)); (pd.DataFrame([valid[0]]) if valid else pd.DataFrame(latest_rows[:15])).to_csv(OUT/('latest_iron_condor.csv' if valid else 'latest_candidate_ladder.csv'),index=False)
+    latest={'signal_date':str(pd.Timestamp(row['signal_date']).date()),'next_expiry':str(pd.Timestamp(row['expiry']).date()),'spot':float(row['spot']),'quantiles':Q.tolist(),'coherent_low_return':latest_pred[0].tolist(),'coherent_close_return':latest_pred[1].tolist(),'coherent_high_return':latest_pred[2].tolist(),'candidate_count':len(valid),'raw_candidate_count':len(latest_rows),'selected_ic':valid[0] if valid else None,'top_candidate_ladder':latest_rows[:15]}; (OUT/'latest_distribution.json').write_text(json.dumps(latest,indent=2)); (OUT/'latest_iron_condor.json').write_text(json.dumps(latest,indent=2)); (pd.DataFrame([valid[0]]) if valid else pd.DataFrame(latest_rows[:15])).to_csv(OUT/('latest_iron_condor.csv' if valid else 'latest_candidate_ladder.csv'),index=False)
     oos_df=split_df[split_df['name'].eq('new_oos')]; gate='RESEARCH_ONLY_PENDING_STABLE_OOS'
     if len(wfo_df)==int(CFG['walk_forward']['windows']) and not oos_df.empty and int(oos_df.iloc[0]['strategy_trades'])>=int(CFG['gates']['minimum_oos_trades']):gate='OOS_VALIDATED_PENDING_MANUAL_REVIEW'
-    summary={'version':'V8.1','samples':len(meta),'features':len(cols),'expiry_count':int(meta['expiry'].nunique()),'history_end':CFG['history_end'],'new_oos_start':CFG['new_oos_start'],'wfo_windows_completed':len(wfo_df),'wfo_windows_required':int(CFG['walk_forward']['windows']),'latest':{'signal_date':latest['signal_date'],'next_expiry':latest['next_expiry'],'spot':latest['spot'],'candidate_count':latest['candidate_count'],'selected_ic':latest['selected_ic']},'research_gate':gate,'objectives':{'coherent_range':True,'pop_from_expiry_payoff_distribution':True,'touch_probability_from_path_distribution':True,'post_cost_ic_payoff':True,'six_window_wfo':len(wfo_df)==int(CFG['walk_forward']['windows']),'70_30':not split_df[split_df['name'].eq('70_30')].empty,'new_oos':not oos_df.empty}}
+    summary={'version':'V8.2','samples':len(meta),'features':len(cols),'expiry_count':int(meta['expiry'].nunique()),'history_end':CFG['history_end'],'new_oos_start':CFG['new_oos_start'],'wfo_windows_completed':len(wfo_df),'wfo_windows_required':int(CFG['walk_forward']['windows']),'latest':{'signal_date':latest['signal_date'],'next_expiry':latest['next_expiry'],'spot':latest['spot'],'candidate_count':latest['candidate_count'],'selected_ic':latest['selected_ic']},'research_gate':gate,'objectives':{'coherent_range':True,'pop_from_expiry_payoff_distribution':True,'touch_probability_from_path_distribution':True,'post_cost_ic_payoff':True,'joint_quantile_coherence':True,'baseline_audit':True,'six_window_wfo':len(wfo_df)==int(CFG['walk_forward']['windows']),'70_30':not split_df[split_df['name'].eq('70_30')].empty,'new_oos':not oos_df.empty}}
     (OUT/'summary.json').write_text(json.dumps(summary,indent=2)); (OUT/'status.json').write_text(json.dumps({'status':gate,'summary':summary},indent=2)); print(json.dumps(summary,indent=2))
 
 if __name__=='__main__':main()

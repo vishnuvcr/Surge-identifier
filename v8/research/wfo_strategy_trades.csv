@@ -1,1 +1,2 @@
-
+signal_date,expiry,spot,short_put,long_put,short_call,long_call,width,gross_credit,entry_costs,net_credit,max_profit,max_loss,reward_risk,model_profit_probability,model_loss_probability,model_touch_probability,model_expected_pnl,selection_score,expiry_close,realized_pnl,realized_win,realized_touch,strategy,fold
+2018-06-21,2018-06-28,10741.099609375,9850.0,9700.0,10900.0,11050.0,150.0,151.59999999999997,108.65796359000001,149.92833902169227,9745.342036409997,4.657963590002652,2092.1893973852316,1.0,0.0,0.31416875,9626.39208391264,717.44443482273,10589.099609375,9745.342036409997,1,0,deep_ic,wfo_1

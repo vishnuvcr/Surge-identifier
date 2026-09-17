@@ -1,2 +1,2 @@
 name,train_samples,test_samples,model_low_mae,model_close_mae,model_high_mae,naive_low_mae,naive_close_mae,naive_high_mae,close_mae_lift_vs_naive,strategy_trades,strategy_wins,strategy_win_rate,strategy_total_pnl,strategy_mean_pnl,strategy_profit_factor,strategy_max_drawdown,strategy_avg_reward_risk,strategy_avg_model_pop,strategy_avg_touch,strategy_avg_max_loss
-new_oos,4522,114,0.021114170571949108,0.025772860665229408,0.02638024090786527,0.012559421093247303,0.019751493543940582,0.017182750890191896,-0.3048562939249766,0,0,0,0,0,0,0,0,0,0,0
+new_oos,4522,114,0.01109053283566546,0.013142641407884095,0.013912620080428033,0.012559421093247303,0.019751493543940582,0.017182750890191896,0.3346001213201404,0,0,0,0,0,0,0,0,0,0,0
