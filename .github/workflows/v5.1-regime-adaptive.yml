@@ -44,7 +44,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Preflight
-        run: python -m py_compile v5/run.py scripts/download_v5_market_context.py scripts/download_v5_flow_context.py
+        run: python -m py_compile v5/run.py v5/run_v5_1_safe.py scripts/download_v5_market_context.py scripts/download_v5_flow_context.py
 
       - name: Download complete NIFTY options and futures history
         run: python scripts/download_nifty_nse_history.py
@@ -99,7 +99,7 @@ jobs:
           PY
 
       - name: Run V5.1 hardened walk-forward
-        run: python v5/run.py
+        run: python v5/run_v5_1_safe.py
 
       - name: Validate V5.1 outputs and economic invariants
         run: |
@@ -112,6 +112,7 @@ jobs:
           s=json.load(open('v5/research/summary.json'))
           t=pd.read_csv('v5/research/oos_trade_ledger.csv')
           print(json.dumps(s['overall_oos'], indent=2))
+          print('payoff invariant skips:', s.get('payoff_invariant_skips', {}).get('count', 0))
           assert s['max_lots_per_trade']==1
           if len(t):
               assert (t['lots']==1).all()
