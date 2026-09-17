@@ -1,4 +1,4 @@
-name: Launch CPR v1.0 Smoke Backtest
+name: CPR v1.0 Smoke Backtest
 
 on:
   workflow_dispatch:
@@ -11,17 +11,46 @@ on:
 
 permissions:
   contents: read
-  actions: write
 
 jobs:
-  launch:
+  smoke:
     runs-on: ubuntu-latest
     steps:
-      - name: Dispatch CPR v1.0 smoke backtest
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Checkout CPR v1.0 branch
+        uses: actions/checkout@v4
+        with:
+          ref: CPR-v1.0
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pyarrow requests
+
+      - name: Bootstrap 1-minute public NSE data and resample to 5-minute
         run: |
-          gh workflow run cpr-v1-smoke.yml \
-            --repo "$GITHUB_REPOSITORY" \
-            --ref CPR-v1.0
-          echo 'CPR v1.0 smoke backtest dispatched.'
+          python scripts/bootstrap_cpr_v1_data.py \
+            --symbols "RELIANCE,HDFCBANK,ICICIBANK,INFY,TCS"
+
+      - name: Run CPR strategy smoke backtest
+        run: |
+          python scripts/run_cpr_v1_backtest.py \
+            --data-dir data/cpr_v1/intraday \
+            --output-dir reports/cpr_v1 \
+            --symbols "RELIANCE,HDFCBANK,ICICIBANK,INFY,TCS" \
+            --capital 100000 \
+            --risk-fraction 0.01 \
+            --max-position-fraction 0.50 \
+            --cost-bps-side 8 \
+            --slippage-bps-side 3
+
+      - name: Upload CPR v1.0 smoke report
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpr-v1-smoke-report
+          path: reports/cpr_v1/
+          if-no-files-found: error
