@@ -75,7 +75,6 @@ def prepare_context(intraday: pd.DataFrame, cfg: CPRMultiModeConfig = CPRMultiMo
     daily['week'] = daily.session.dt.to_period('W-FRI')
     daily['month'] = daily.session.dt.to_period('M')
 
-    # Previous day levels used during the current day.
     pdsrc = daily[['symbol','session','open','high','low','close']].copy()
     for c in ['open','high','low','close']:
         pdsrc[c] = pdsrc.groupby('symbol')[c].shift(1)
@@ -84,8 +83,6 @@ def prepare_context(intraday: pd.DataFrame, cfg: CPRMultiModeConfig = CPRMultiMo
     d['d_pd_low'] = pdsrc.low
     d['d_ascending'] = d.groupby('symbol').d_cpr_low.diff() > 0
     d['d_descending'] = d.groupby('symbol').d_cpr_low.diff() < 0
-    # Whether today's price has touched today's prior-day CPR. Used only to
-    # identify older CPRs as virgin on later sessions.
     d['d_touched'] = (daily.high >= d.d_cpr_low) & (daily.low <= d.d_cpr_high)
     for lag in range(1, cfg.virgin_age+1):
         virgin = ~d.groupby('symbol').d_touched.shift(lag).fillna(True)
@@ -107,16 +104,13 @@ def prepare_context(intraday: pd.DataFrame, cfg: CPRMultiModeConfig = CPRMultiMo
 
     dcols = ['symbol','session'] + [c for c in d.columns if c not in ('symbol','session','open','high','low','close')]
     daily = daily.merge(d[dcols], on=['symbol','session'], how='left')
-    wcols = ['symbol','week'] + [c for c in w.columns if c.startswith('w_') or c in ('w_touched','week')]
-    wcols = list(dict.fromkeys(wcols))
-    daily = daily.merge(w[wcols], on=['symbol','week'], how='left')
-    mcols = ['symbol','month'] + [c for c in m.columns if c.startswith('m_') or c in ('month',)]
-    mcols = list(dict.fromkeys(mcols))
-    daily = daily.merge(m[mcols], on=['symbol','month'], how='left')
+    wcols = ['symbol','week'] + [c for c in w.columns if c.startswith('w_') or c == 'w_touched']
+    daily = daily.merge(w[list(dict.fromkeys(wcols))], on=['symbol','week'], how='left')
+    mcols = ['symbol','month'] + [c for c in m.columns if c.startswith('m_')]
+    daily = daily.merge(m[list(dict.fromkeys(mcols))], on=['symbol','month'], how='left')
     daily['d_width_class'] = width_class(daily.d_width_ratio, cfg)
     daily['w_width_class'] = width_class(daily.w_width_ratio, cfg)
 
-    # Merge only derived context into 5-minute bars; never merge OHLC duplicates.
     context_cols = ['symbol','session'] + [c for c in daily.columns if c.startswith(('d_','w_','m_'))] + ['d_width_class','w_width_class']
     context_cols = list(dict.fromkeys(context_cols))
     x = x.merge(daily[context_cols], on=['symbol','session'], how='left')
@@ -176,8 +170,8 @@ def generate_intraday(x, strategy, cfg):
     elif strategy == 'virgin_cpr_reversal':
         for lag in range(1,cfg.virgin_age+1):
             lo, hi = z[f'd_virgin_{lag}_low'], z[f'd_virgin_{lag}_high']
-            put(out, z.low<=lo, 1, lo*(1-b), z.d_cpr_high, f'Virgin CPR lower rejection age {lag}')
-            put(out, z.high>=hi, -1, hi*(1+b), z.d_cpr_low, f'Virgin CPR upper rejection age {lag}')
+            put(out, (z.low<=lo) & (z.close>lo), 1, lo*(1-b), z.d_cpr_high, f'Virgin CPR lower rejection age {lag}')
+            put(out, (z.high>=hi) & (z.close<hi), -1, hi*(1+b), z.d_cpr_low, f'Virgin CPR upper rejection age {lag}')
     elif strategy == 'mtf_cpr_daytrade':
         put(out, wabove & cross_up(z,upper), 1, z.d_cpr_high*(1-b), z.d_r2, 'Weekly-above daily breakout')
         put(out, wbelow & cross_down(z,lower), -1, z.d_cpr_low*(1+b), z.d_s2, 'Weekly-below daily breakdown')
@@ -211,6 +205,8 @@ def generate_daily(daily, strategy, mode, cfg):
     upper = z[['w_r1','w_prev_high']].max(axis=1)
     lower = z[['w_s1','w_prev_low']].min(axis=1)
     near_w = z.w_width_class.isin(['single_line','narrow'])
+    prev_r1 = z.groupby('symbol').w_r1.shift(1)
+    prev_s1 = z.groupby('symbol').w_s1.shift(1)
     if strategy == 'camarilla_inside_reversal':
         rin = z.w_cam_r3.between(z.w_cpr_low,z.w_cpr_high)
         sin = z.w_cam_s3.between(z.w_cpr_low,z.w_cpr_high)
@@ -221,8 +217,8 @@ def generate_daily(daily, strategy, mode, cfg):
         put(out,(z.low<lower)&(z.close>lower),1,z.low*(1-b),z.w_pivot,'Weekly S1/previous-week-low reversal')
     elif strategy == 'narrow_cpr_breakout':
         pc = z.groupby('symbol').close.shift(1)
-        put(out,near_w&(z.close>upper)&(pc<=z.w_r1.shift(1)),1,z.w_cpr_high*(1-b),z.w_r2,'Narrow weekly CPR breakout')
-        put(out,near_w&(z.close<lower)&(pc>=z.w_s1.shift(1)),-1,z.w_cpr_low*(1+b),z.w_s2,'Narrow weekly CPR breakdown')
+        put(out,near_w&(z.close>upper)&(pc<=prev_r1),1,z.w_cpr_high*(1-b),z.w_r2,'Narrow weekly CPR breakout')
+        put(out,near_w&(z.close<lower)&(pc>=prev_s1),-1,z.w_cpr_low*(1+b),z.w_s2,'Narrow weekly CPR breakdown')
     elif strategy == 'virgin_cpr_reversal':
         put(out,z.low<=z.w_virgin_low,1,z.w_virgin_low*(1-b),z.w_cpr_high,'Virgin weekly CPR lower reversal')
         put(out,z.high>=z.w_virgin_high,-1,z.w_virgin_high*(1+b),z.w_cpr_low,'Virgin weekly CPR upper reversal')
@@ -233,7 +229,7 @@ def generate_daily(daily, strategy, mode, cfg):
         put(out,z.w_ascending.fillna(False)&(z.close>upper),1,z.w_cpr_high*(1-b),z.w_r2,'Ascending weekly CPR breakout')
         put(out,z.w_descending.fillna(False)&(z.close<lower),-1,z.w_cpr_low*(1+b),z.w_s2,'Descending weekly CPR breakdown')
     elif strategy == 'masterclass_regime_open':
-        first_week = ~z.session.dt.to_period('W-FRI').eq(z.groupby('symbol').session.dt.to_period('W-FRI').shift(1))
+        first_week = z.groupby('symbol').session.diff().isna() | z.week.ne(z.groupby('symbol').week.shift(1))
         put(out,first_week&(z.open>z.w_r1)&(z.close<z.w_cpr_high),-1,z.high*(1+b),z.w_pivot,'Weekly opening excess fade')
         put(out,first_week&(z.open<z.w_s1)&(z.close>z.w_cpr_low),1,z.low*(1-b),z.w_pivot,'Weekly opening downside fade')
     elif strategy == 'weekly_cpr_masterclass':
