@@ -1,0 +1,38 @@
+history_start: '2015-01-01'
+history_end: '2026-09-16'
+new_oos_start: '2026-04-01'
+prediction_interval: 0.90
+regime_threshold: 0.0025
+rolling_training_years: 4
+purge_days: 7
+embargo_days: 2
+seed: 42
+
+models:
+  tabular:
+    enabled: true
+  deep_learning:
+    enabled: true
+    min_samples: 250
+  tft:
+    enabled: true
+  tkan:
+    enabled: false
+  dwt_cnn_lstm:
+    enabled: false
+
+features:
+  use_all_constituents: true
+  use_point_in_time_weights: true
+  use_fii_dii: true
+  use_futures: true
+  use_options_microstructure: true
+  use_cross_asset: true
+  use_news_sentiment: true
+
+options:
+  enabled: true
+  max_risk_per_trade_fraction: 0.02
+  slippage_ticks: 2
+  execution_mode: conservative_mid_worse
+  backtest_start: '2021-01-01'
