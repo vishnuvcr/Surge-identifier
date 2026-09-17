@@ -1,0 +1,43 @@
+name: Single Stock ML Walk-Forward OOS
+
+on:
+  workflow_dispatch:
+    inputs:
+      symbol:
+        description: NSE EQ symbol
+        required: true
+        default: RELIANCE
+      target:
+        description: Open-to-high target return
+        required: true
+        default: '0.0275'
+      stop:
+        description: Open-to-low stop return
+        required: true
+        default: '0.0125'
+      probability_gate:
+        description: Minimum ML probability for a trade
+        required: true
+        default: '0.60'
+
+jobs:
+  oos:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - name: Run single-stock walk-forward OOS
+        run: |
+          python scripts/run_single_stock_oos.py \
+            --symbol "${{ inputs.symbol }}" \
+            --target "${{ inputs.target }}" \
+            --stop "${{ inputs.stop }}" \
+            --probability-gate "${{ inputs.probability_gate }}"
+      - name: Upload OOS report
+        uses: actions/upload-artifact@v4
+        with:
+          name: single-stock-oos-${{ inputs.symbol }}
+          path: reports/single_stock/
