@@ -8,17 +8,33 @@ on:
         required: true
         default: RELIANCE
       target:
-        description: Open-to-high target return
+        description: Fixed target for baseline run
         required: true
         default: '0.0275'
       stop:
-        description: Open-to-low stop return
+        description: Fixed stop for baseline run
         required: true
         default: '0.0125'
       probability_gate:
-        description: Minimum ML probability for a trade
+        description: Fixed probability gate for baseline run
         required: true
         default: '0.60'
+      initial_capital:
+        description: Starting capital in INR
+        required: true
+        default: '100000'
+      cost_bps_per_side:
+        description: Configurable trading cost per side in bps
+        required: true
+        default: '8'
+      slippage_bps_per_side:
+        description: Configurable slippage per side in bps
+        required: true
+        default: '3'
+      risk_fraction:
+        description: Maximum capital risked per trade
+        required: true
+        default: '0.01'
 
 jobs:
   oos:
@@ -29,13 +45,17 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install -r requirements.txt
-      - name: Run single-stock walk-forward OOS
+      - name: Run single-stock nested walk-forward OOS
         run: |
           python scripts/run_single_stock_oos.py \
             --symbol "${{ inputs.symbol }}" \
             --target "${{ inputs.target }}" \
             --stop "${{ inputs.stop }}" \
-            --probability-gate "${{ inputs.probability_gate }}"
+            --probability-gate "${{ inputs.probability_gate }}" \
+            --initial-capital "${{ inputs.initial_capital }}" \
+            --cost-bps-per-side "${{ inputs.cost_bps_per_side }}" \
+            --slippage-bps-per-side "${{ inputs.slippage_bps_per_side }}" \
+            --risk-fraction "${{ inputs.risk_fraction }}"
       - name: Upload OOS report
         uses: actions/upload-artifact@v4
         with:
