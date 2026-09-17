@@ -67,7 +67,7 @@ jobs:
           PYTHONUNBUFFERED: '1'
           PYTHONWARNINGS: 'ignore::FutureWarning'
         run: |
-          python scripts/run_cpr_multimode.py \
+          python scripts/run_cpr_multimode_fixed.py \
             --data-dir data/cpr_v1/intraday \
             --output-dir reports/cpr_multimode \
             --symbols 'RELIANCE,HDFCBANK,ICICIBANK,INFY,TCS' \
