@@ -1,0 +1,27 @@
+name: Launch CPR v1.0 Smoke Backtest
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Run after the NSE session on weekdays (22:30 IST / 17:00 UTC).
+    - cron: "0 17 * * 1-5"
+  push:
+    paths:
+      - '.github/workflows/cpr-v1-launcher.yml'
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  launch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch CPR v1.0 smoke backtest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run cpr-v1-smoke.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref CPR-v1.0
+          echo 'CPR v1.0 smoke backtest dispatched.'
