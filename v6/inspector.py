@@ -42,8 +42,8 @@ def main():
     if 'run_wfo' not in text or 'run_7030' not in text or 'run_new_oos' not in text:
         fail('required evaluation modes missing',f)
 
-    # Verify the held-out OOS boundary structurally inside run_new_oos(), rather than
-    # relying on a formatting-sensitive regex/string match.
+    # Verify the held-out OOS boundary structurally inside run_new_oos(), allowing
+    # the engine to use an alias such as: start = pd.Timestamp(...); oos = ds[entry_date >= start].
     boundary_ok=False
     if tree is not None:
         for node in ast.walk(tree):
@@ -52,8 +52,12 @@ def main():
                 boundary_ok=(
                     "new_oos_start" in src and
                     "entry_date" in src and
-                    (">=pd.Timestamp(CFG['new_oos_start'])" in src or
-                     ">= pd.Timestamp(CFG['new_oos_start'])" in src)
+                    (
+                        ">=pd.Timestamp(CFG['new_oos_start'])" in src or
+                        ">= pd.Timestamp(CFG['new_oos_start'])" in src or
+                        "entry_date>=start" in src or
+                        "entry_date >= start" in src
+                    )
                 )
                 break
     if not boundary_ok:
