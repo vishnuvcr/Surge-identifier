@@ -1,4 +1,4 @@
-version: V8.1
+version: V8.2
 history_end: '2026-09-16'
 new_oos_start: '2026-04-01'
 purge_days: 7
@@ -8,6 +8,7 @@ sample_stride: 1
 seed: 42
 min_train_samples: 500
 min_ic_reward_risk: 1.5
+preferred_ic_reward_risk: 2.0
 max_ic_reward_risk: 6.0
 min_profit_probability: 0.65
 max_touch_probability: 0.35
@@ -32,8 +33,8 @@ model:
   gradient_clip: 1.0
   quantiles: [0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95]
 wing_width_points: [100, 150, 200, 250, 300, 400, 500]
-short_put_moneyness_points: [100, 150, 200, 250, 300, 400, 500, 600, 700]
-short_call_moneyness_points: [100, 150, 200, 250, 300, 400, 500, 600, 700]
+short_put_moneyness_points: [100, 150, 200, 250, 300, 400, 500, 600, 700, 800, 900, 1000]
+short_call_moneyness_points: [100, 150, 200, 250, 300, 400, 500, 600, 700, 800, 900, 1000]
 freshness:
   flow_max_age_days: 10
   news_max_age_days: 10
