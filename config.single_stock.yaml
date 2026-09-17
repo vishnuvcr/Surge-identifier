@@ -1,0 +1,12 @@
+symbol: RELIANCE
+lookback_days: 1800
+train_days: 504
+test_days: 21
+step_days: 21
+target_return: 0.0275
+stop_return: 0.0125
+probability_gate: 0.60
+initial_capital: 100000
+cost_bps_per_side: 8
+max_risk_fraction: 0.01
+max_position_fraction: 0.95
