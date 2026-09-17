@@ -687,6 +687,7 @@
     "Defined-risk payoffs are checked analytically before a trade enters the dataset.",
     "Historical quote/payoff invariant failures are excluded rather than aborting the full research run.",
     "Known context-key drift is repaired from point-in-time internal keys.",
+    "Unsupported all-NaN historical flow features are excluded from model training.",
     "Context/news values are lagged by at least one session.",
     "No overlapping positions."
   ],
@@ -725,10 +726,21 @@
       "PAYOFF_INVARIANT_FAILED 2019-06-27 IRON_BUTTERFLY gross=30502.50 bounds=(-1443.75,13556.25)",
       "PAYOFF_INVARIANT_FAILED 2019-07-01 IRON_CONDOR gross=-3045.00 bounds=(-2508.75,12491.25)"
     ],
-    "policy": "Malformed/inconsistent historical option quotes are excluded from the candidate dataset; the research run continues. Non-payoff exceptions still abort the run."
+    "policy": "Malformed/inconsistent historical option quotes are excluded from the candidate dataset; non-payoff exceptions still abort the run."
   },
   "context_key_repairs": {
     "count": 2342,
-    "policy": "Legacy raw Yahoo-symbol feature lookups are repaired from the point-in-time internal context keys before model features are consumed."
+    "policy": "Legacy raw Yahoo-symbol feature lookups are repaired from point-in-time internal context keys."
+  },
+  "historical_feature_integrity": {
+    "disabled_features": [
+      "dii_net_z",
+      "fii_fut_long_short",
+      "fii_net_z",
+      "flow_sentiment",
+      "pcr"
+    ],
+    "reason": "The current FII/DII/PCR feed lacks sufficient point-in-time history for the 2017-2025 training windows; all-NaN features are therefore excluded rather than imputed.",
+    "policy": "Re-enable only after a validated historical source covers the required training windows."
   }
 }
