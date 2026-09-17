@@ -56,8 +56,10 @@ def main() -> int:
         else:
             print(f'OK compile: {p.relative_to(ROOT)}')
 
-    main_text, inspector_text = MAIN.read_text(), INSPECTOR_WORKFLOW.read_text()
-    safe_text, base_text = SAFE.read_text(), BASE.read_text()
+    main_text = MAIN.read_text()
+    inspector_text = INSPECTOR_WORKFLOW.read_text()
+    safe_text = SAFE.read_text()
+    base_text = BASE.read_text()
 
     if 'uses: ./.github/workflows/v5.1-independent-inspector.yml' not in main_text:
         fail('main V5.1 workflow is not gated by the independent inspector', failures)
@@ -87,7 +89,7 @@ def main() -> int:
     if '\n        raise\n' not in safe_text:
         fail('safe runner may swallow non-payoff RuntimeErrors', failures)
 
-    raw_symbol_mismatch = ("c.get('INR=X_ret5'" in base_text) or ("c.get('BZ=F_ret5'" in base_text))
+    raw_symbol_mismatch = ("c.get('INR=X_ret5'" in base_text) or ("c.get('BZ=F_ret5'" in base_text)
     if raw_symbol_mismatch and ("f['usd_inr_ret5']" not in safe_text or "f['brent_ret5']" not in safe_text):
         fail('legacy Yahoo-symbol lookups have no safe context-key repair', failures)
 
