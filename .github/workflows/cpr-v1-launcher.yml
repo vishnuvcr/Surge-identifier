@@ -12,6 +12,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # The CPR scripts import the repository's src/ package directly.
+  PYTHONPATH: ${{ github.workspace }}
+
 jobs:
   smoke:
     runs-on: ubuntu-latest
@@ -39,6 +43,18 @@ jobs:
             'requests>=2.32,<3' \
             'scikit-learn>=1.5,<2' \
             'pyyaml>=6,<7'
+
+      - name: Verify CPR source imports
+        run: |
+          python - <<'PY'
+          import sys
+          from pathlib import Path
+          print('Python:', sys.version)
+          print('Workspace:', Path.cwd())
+          print('PYTHONPATH:', sys.path)
+          from src.cpr_v1_engine import CPRConfig, period_levels, STRATEGIES
+          print('CPR import OK; strategies:', sorted(STRATEGIES))
+          PY
 
       - name: Bootstrap 1-minute public NSE data and resample to 5-minute
         env:
