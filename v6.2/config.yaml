@@ -3,29 +3,35 @@ history_end: '2026-09-16'
 new_oos_start: '2026-04-01'
 prediction_interval: 0.90
 regime_threshold: 0.0025
-rolling_training_years: 4
 purge_days: 7
 embargo_days: 2
 seed: 42
-sequence_length: 10
-min_samples: 180
+sequence_length: 20
+sample_stride: 2
+min_samples: 300
 
-models:
-  naive: true
-  ridge: true
-  rf: true
-  extra_trees: true
-  hgbr: true
-  xgboost: true
-  lstm: true
-  ensemble: true
+v7:
+  d_model: 96
+  stock_embed_dim: 64
+  transformer_heads: 4
+  transformer_layers: 2
+  dropout: 0.15
+  batch_size: 64
+  epochs: 18
+  patience: 4
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  gradient_clip: 1.0
+  wfo_windows: 6
+  wfo_train_expiries: 36
+  wfo_test_expiries: 6
 
 features:
   use_all_constituents: true
   use_point_in_time_weights: true
   use_fii_dii: true
   use_futures: true
-  use_options_microstructure: true
+  use_options_surface: true
   use_cross_asset: true
   use_news_sentiment: true
   use_technical_expansion: true
@@ -58,3 +64,4 @@ costs:
   stt_sell_pct_from_2026_04_01: 0.0015
 
 pages: true
+version: V7
