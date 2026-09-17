@@ -52,7 +52,7 @@ jobs:
         run: python v6.2/inspector.py
 
       - name: Compile V6.2 implementation
-        run: python -m py_compile v6.2/download_multimodal_data.py v6.2/multimodal_engine.py
+        run: python -m py_compile v6.2/download_multimodal_data.py v6.2/multimodal_engine.py v6.2/correct_latest_forecast.py
 
       - name: Download NIFTY options and futures history
         run: python scripts/download_nifty_nse_history.py
@@ -97,6 +97,9 @@ jobs:
       - name: Run V6.2 multimodal research
         run: python v6.2/multimodal_engine.py
 
+      - name: Recompute latest forecast from fresh current-cutoff features
+        run: python v6.2/correct_latest_forecast.py
+
       - name: Validate V6.2 research outputs
         run: |
           python - <<'PY'
@@ -111,6 +114,8 @@ jobs:
           assert s['history_end']=='2026-09-16'
           assert s['new_oos_start']=='2026-04-01'
           assert latest['available'] is True
+          assert latest['forecast_feature_date_verified'] is True
+          assert latest['signal_date'] == latest['latest_feature_date']
           assert latest['next_expiry'] > '2026-09-16'
           o=pd.read_csv(root/'new_oos_predictions.csv')
           assert len(o)>0
