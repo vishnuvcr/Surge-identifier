@@ -1,0 +1,94 @@
+[
+  {
+    "window": 1,
+    "train_start": "2017-12-31",
+    "train_end": "2020-12-31",
+    "test_start": "2021-01-01",
+    "test_end": "2021-12-31",
+    "training_rows": 642,
+    "test_rows": 237,
+    "choices": {
+      "IRON_BUTTERFLY": 19,
+      "BULL_PUT_SPREAD": 11,
+      "BULL_CALL_SPREAD": 4,
+      "IRON_CONDOR": 3,
+      "BEAR_PUT_SPREAD": 1
+    }
+  },
+  {
+    "window": 2,
+    "train_start": "2018-12-31",
+    "train_end": "2021-12-31",
+    "test_start": "2022-01-01",
+    "test_end": "2022-12-31",
+    "training_rows": 708,
+    "test_rows": 238,
+    "choices": {
+      "BULL_CALL_SPREAD": 17,
+      "IRON_BUTTERFLY": 16,
+      "IRON_CONDOR": 3,
+      "BULL_PUT_SPREAD": 2
+    }
+  },
+  {
+    "window": 3,
+    "train_start": "2019-12-31",
+    "train_end": "2022-12-31",
+    "test_start": "2023-01-01",
+    "test_end": "2023-12-31",
+    "training_rows": 716,
+    "test_rows": 235,
+    "choices": {
+      "BULL_PUT_SPREAD": 15,
+      "IRON_BUTTERFLY": 12,
+      "BULL_CALL_SPREAD": 6,
+      "IRON_CONDOR": 3
+    }
+  },
+  {
+    "window": 4,
+    "train_start": "2020-12-31",
+    "train_end": "2023-12-31",
+    "test_start": "2024-01-01",
+    "test_end": "2024-12-31",
+    "training_rows": 710,
+    "test_rows": 238,
+    "choices": {
+      "BULL_PUT_SPREAD": 22,
+      "IRON_BUTTERFLY": 7,
+      "BULL_CALL_SPREAD": 4,
+      "IRON_CONDOR": 2
+    }
+  },
+  {
+    "window": 5,
+    "train_start": "2021-12-31",
+    "train_end": "2024-12-31",
+    "test_start": "2025-01-01",
+    "test_end": "2025-12-31",
+    "training_rows": 711,
+    "test_rows": 248,
+    "choices": {
+      "BULL_CALL_SPREAD": 22,
+      "BULL_PUT_SPREAD": 14,
+      "BEAR_PUT_SPREAD": 1,
+      "IRON_BUTTERFLY": 1
+    }
+  },
+  {
+    "window": 6,
+    "train_start": "2022-12-31",
+    "train_end": "2025-12-31",
+    "test_start": "2026-01-01",
+    "test_end": "2026-09-16",
+    "training_rows": 721,
+    "test_rows": 168,
+    "choices": {
+      "IRON_BUTTERFLY": 9,
+      "BULL_PUT_SPREAD": 5,
+      "LONG_CALL": 5,
+      "LONG_PUT": 5,
+      "NO_TRADE": 4
+    }
+  }
+]
