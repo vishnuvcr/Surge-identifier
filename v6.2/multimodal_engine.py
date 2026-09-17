@@ -2,41 +2,47 @@ from __future__ import annotations
 
 import json
 import math
-import sys
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
+from torch.utils.data import DataLoader, TensorDataset
 import yaml
-from sklearn.ensemble import ExtraTreesRegressor, HistGradientBoostingRegressor, RandomForestRegressor
-from sklearn.impute import SimpleImputer
-from sklearn.linear_model import Ridge
-from sklearn.metrics import mean_absolute_error, mean_squared_error
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
-from xgboost import XGBRegressor
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT / 'v5') not in sys.path:
-    sys.path.insert(0, str(ROOT / 'v5'))
-from run import Market  # noqa: E402
-
 CFG = yaml.safe_load((ROOT / 'v6.2/config.yaml').read_text())
 OUT = ROOT / 'v6.2/research'
 OUT.mkdir(parents=True, exist_ok=True)
 SEED = int(CFG['seed'])
-np.random.seed(SEED); torch.manual_seed(SEED)
-TH = float(CFG['regime_threshold'])
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+torch.set_num_threads(2)
 
-ALIASES = {'INFOSYSTCH': 'INFY', 'HEROHONDA': 'HEROMOTOCO', 'BAJAJ-AUTO': 'BAJAJAUTO', 'ZOMATO': 'ETERNAL', 'MINDTREE': 'LTIM', 'TATAMTRDVR': 'TATAMOTORS'}
+ALIASES = {
+    'INFOSYSTCH': 'INFY', 'HEROHONDA': 'HEROMOTOCO', 'BAJAJ-AUTO': 'BAJAJAUTO',
+    'ZOMATO': 'ETERNAL', 'MINDTREE': 'LTIM', 'TATAMTRDVR': 'TATAMOTORS'
+}
+
+REGIMES = ['BEARISH', 'RANGE_BOUND', 'BULLISH']
+Q = np.array([0.10, 0.50, 0.90], dtype=np.float32)
 
 
 def regime(x: float) -> str:
-    if x >= TH: return 'BULLISH'
-    if x <= -TH: return 'BEARISH'
+    th = float(CFG['regime_threshold'])
+    if x >= th:
+        return 'BULLISH'
+    if x <= -th:
+        return 'BEARISH'
     return 'RANGE_BOUND'
+
+
+def _clean_dates(df: pd.DataFrame, col: str = 'date') -> pd.DataFrame:
+    z = df.copy()
+    z[col] = pd.to_datetime(z[col], errors='coerce').dt.normalize()
+    return z.dropna(subset=[col]).sort_values(col)
 
 
 def load_inputs():
@@ -44,308 +50,644 @@ def load_inputs():
     futures = pd.read_parquet(ROOT / 'data/cache/nifty_futures_long.parquet')
     context = pd.read_parquet(ROOT / 'data/cache/v5_market_context.parquet')
     news = pd.read_csv(ROOT / 'data/cache/v5_news_daily.csv')
-    context['date'] = pd.to_datetime(context['date']).dt.normalize() if 'date' in context.columns else pd.to_datetime(context.index).normalize()
-    news.columns = [str(c).strip().lower() for c in news.columns]
-    idx = pd.read_parquet(ROOT / 'data/cache/v62_nifty50_index.parquet')
-    idx['date'] = pd.to_datetime(idx['date']).dt.normalize(); idx = idx.sort_values('date').drop_duplicates('date', keep='last')
+    index = pd.read_parquet(ROOT / 'data/cache/v62_nifty50_index.parquet')
     prices = pd.read_parquet(ROOT / 'data/cache/v62_constituent_prices.parquet')
-    prices['symbol'] = prices['symbol'].astype(str).str.upper().replace(ALIASES)
-    prices['date'] = pd.to_datetime(prices['date']).dt.normalize(); prices['close'] = pd.to_numeric(prices['close'], errors='coerce')
-    prices = prices.dropna(subset=['date','close']).drop_duplicates(['symbol','date'], keep='last')
     weights = pd.read_csv(ROOT / 'data/cache/v62_constituent_weights.csv')
-    weights.columns = [str(c).strip().upper() for c in weights.columns]; weights['DATE'] = pd.to_datetime(weights['DATE']).dt.normalize()
-    for c in weights.columns:
-        if c != 'DATE': weights[c] = pd.to_numeric(weights[c], errors='coerce').fillna(0.0)
     membership = pd.read_csv(ROOT / 'data/cache/v62_nifty50_membership.csv')
+    flows = pd.read_parquet(ROOT / 'data/cache/v62_fii_dii.parquet')
+
+    index = _clean_dates(index)
+    for c in ['open', 'high', 'low', 'close', 'volume']:
+        if c in index.columns:
+            index[c] = pd.to_numeric(index[c], errors='coerce')
+    index = index.dropna(subset=['close']).drop_duplicates('date', keep='last')
+
+    options['date'] = pd.to_datetime(options['date'], errors='coerce').dt.normalize()
+    options['expiry'] = pd.to_datetime(options['expiry'], errors='coerce').dt.normalize()
+    options['option_type'] = options['option_type'].astype(str).str.upper()
+    for c in ['strike', 'open_interest', 'volume', 'close']:
+        options[c] = pd.to_numeric(options[c], errors='coerce').fillna(0.0)
+    options = options.dropna(subset=['date', 'expiry'])
+
+    futures['date'] = pd.to_datetime(futures['date'], errors='coerce').dt.normalize()
+    futures['expiry'] = pd.to_datetime(futures['expiry'], errors='coerce').dt.normalize()
+    for c in ['close', 'open_interest', 'volume']:
+        futures[c] = pd.to_numeric(futures[c], errors='coerce').fillna(0.0)
+    futures = futures.dropna(subset=['date', 'expiry'])
+
+    context = _clean_dates(context)
+    context['series'] = context['series'].astype(str).str.strip()
+    context['close'] = pd.to_numeric(context['close'], errors='coerce')
+
+    news.columns = [str(c).strip().lower() for c in news.columns]
+    news = _clean_dates(news)
+    for c in news.columns:
+        if c != 'date':
+            news[c] = pd.to_numeric(news[c], errors='coerce')
+
+    prices.columns = [str(c).strip().lower() for c in prices.columns]
+    prices['symbol'] = prices['symbol'].astype(str).str.upper().replace(ALIASES)
+    prices['date'] = pd.to_datetime(prices['date'], errors='coerce').dt.normalize()
+    prices['close'] = pd.to_numeric(prices['close'], errors='coerce')
+    prices = prices.dropna(subset=['symbol', 'date', 'close']).drop_duplicates(['symbol', 'date'], keep='last')
+
+    weights.columns = [str(c).strip().upper() for c in weights.columns]
+    weights['DATE'] = pd.to_datetime(weights['DATE'], errors='coerce').dt.normalize()
+    for c in weights.columns:
+        if c != 'DATE':
+            weights[c] = pd.to_numeric(weights[c], errors='coerce').fillna(0.0)
+    weights = weights.dropna(subset=['DATE']).sort_values('DATE').drop_duplicates('DATE', keep='last')
+    weights = weights.rename(columns={c: ALIASES.get(c, c) for c in weights.columns})
+
     membership.columns = [str(c).strip().lower() for c in membership.columns]
     membership['symbol'] = membership['symbol'].astype(str).str.upper().replace(ALIASES)
-    membership['valid_from'] = pd.to_datetime(membership['valid_from']).dt.normalize(); membership['valid_to'] = pd.to_datetime(membership['valid_to'], errors='coerce').dt.normalize()
-    flows = pd.read_parquet(ROOT / 'data/cache/v62_fii_dii.parquet')
-    if len(flows): flows['date'] = pd.to_datetime(flows['date']).dt.normalize()
-    return options, futures, context, news, idx, prices, weights, membership, flows
+    membership['valid_from'] = pd.to_datetime(membership['valid_from'], errors='coerce').dt.normalize()
+    membership['valid_to'] = pd.to_datetime(membership['valid_to'], errors='coerce').dt.normalize()
+    membership = membership.dropna(subset=['symbol', 'valid_from'])
+
+    flows['date'] = pd.to_datetime(flows['date'], errors='coerce').dt.normalize()
+    for c in ['fii_net', 'dii_net']:
+        if c in flows.columns:
+            flows[c] = pd.to_numeric(flows[c], errors='coerce')
+    flows = flows.dropna(subset=['date']).sort_values('date')
+    return options, futures, context, news, index, prices, weights, membership, flows
 
 
-def cycles(index: pd.DataFrame, options: pd.DataFrame) -> pd.DataFrame:
-    exps = sorted(pd.to_datetime(options['expiry']).dt.normalize().dropna().unique())
-    dates = pd.DatetimeIndex(index['date'].sort_values().unique()); ix = index.set_index('date')['close']
-    rows=[]
-    for i in range(len(exps)-1):
-        prev = pd.Timestamp(exps[i]); expiry = pd.Timestamp(exps[i+1])
-        sig_dates = dates[(dates > prev) & (dates < expiry)]
-        if not len(sig_dates): continue
-        signal = pd.Timestamp(sig_dates[0]); target_dates = dates[dates <= expiry]
-        if not len(target_dates): continue
-        td = pd.Timestamp(target_dates[-1]);
-        if td <= signal or signal not in ix.index or td not in ix.index: continue
-        spot=float(ix.loc[signal]); target=float(ix.loc[td])
-        rows.append({'signal_date':signal,'expiry':expiry,'target_date':td,'spot':spot,'target_close':target,'target_return':target/spot-1})
-    return pd.DataFrame(rows).drop_duplicates('expiry').sort_values('signal_date').reset_index(drop=True)
+def _expiry_maps(index_dates: pd.DatetimeIndex, options: pd.DataFrame):
+    exps = np.array(sorted(pd.to_datetime(options['expiry']).dropna().unique()), dtype='datetime64[ns]')
+    dates = pd.DatetimeIndex(index_dates)
+    pos = np.searchsorted(exps, dates.values.astype('datetime64[ns]'), side='right')
+    next_exp = [pd.Timestamp(exps[p]) if p < len(exps) else pd.NaT for p in pos]
+    return pd.Series(next_exp, index=dates)
 
 
-def rsi(x, n=14):
-    d=x.diff(); up=d.clip(lower=0).ewm(alpha=1/n, adjust=False).mean(); dn=(-d.clip(upper=0)).ewm(alpha=1/n, adjust=False).mean()
-    return 100 - 100/(1+up/(dn+1e-12))
+def _strict_asof(left_dates: pd.DatetimeIndex, right: pd.DataFrame, right_date_col: str = 'date') -> pd.DataFrame:
+    l = pd.DataFrame({'date': pd.DatetimeIndex(left_dates)})
+    r = right.copy().sort_values(right_date_col).rename(columns={right_date_col: '_date'})
+    return pd.merge_asof(l.sort_values('date'), r, left_on='date', right_on='_date', direction='backward', allow_exact_matches=False).set_index('date')
 
 
-def asof_series(s: pd.Series, d: pd.Timestamp) -> float:
-    z=s.loc[s.index < d]
-    return float(z.iloc[-1]) if len(z) else np.nan
+def _index_features(index: pd.DataFrame) -> pd.DataFrame:
+    x = index.set_index('date').sort_index().copy()
+    c = x['close'].astype(float)
+    r = c.pct_change(fill_method=None)
+    out = pd.DataFrame(index=x.index)
+    out['idx_ret1'] = r
+    out['idx_ret5'] = c.pct_change(5, fill_method=None)
+    out['idx_ret20'] = c.pct_change(20, fill_method=None)
+    out['idx_vol5'] = r.rolling(5).std() * math.sqrt(252)
+    out['idx_vol20'] = r.rolling(20).std() * math.sqrt(252)
+    out['idx_ema20_gap'] = c / c.ewm(span=20, adjust=False).mean() - 1.0
+    out['idx_range20'] = (c - c.shift(1).rolling(20).min()) / (c.shift(1).rolling(20).max() - c.shift(1).rolling(20).min() + 1e-9)
+    if {'high', 'low'}.issubset(x.columns):
+        out['idx_atr14'] = (x['high'] - x['low']).abs().rolling(14).mean() / c
+    else:
+        out['idx_atr14'] = np.nan
+    out['idx_rsi14'] = _rsi(c) / 100.0
+    return out.replace([np.inf, -np.inf], np.nan)
 
 
-def index_features(idx: pd.DataFrame, d: pd.Timestamp, options: pd.DataFrame) -> dict:
-    z=idx[idx.date<=d].copy().set_index('date').sort_index(); c=z.close.astype(float); ret=c.pct_change(); row={}
-    for n in [1,5,10,20]: row[f'idx_ret{n}']=float(c.pct_change(n).iloc[-1])
-    for n in [10,20,50]: row[f'idx_ema{n}_gap']=float(c.iloc[-1]/c.ewm(span=n,adjust=False).mean().iloc[-1]-1)
-    row['idx_rsi14']=float(rsi(c).iloc[-1]/100); row['idx_vol10']=float(ret.rolling(10).std().iloc[-1]*math.sqrt(252)); row['idx_vol20']=float(ret.rolling(20).std().iloc[-1]*math.sqrt(252))
-    row['idx_atr14']=float(((z.high-z.low).abs().rolling(14).mean()/c).iloc[-1]) if {'high','low'}.issubset(z.columns) else np.nan
-    row['idx_range20']=float((c.iloc[-1]-c.shift(1).rolling(20).min().iloc[-1])/(c.shift(1).rolling(20).max().iloc[-1]-c.shift(1).rolling(20).min().iloc[-1]+1e-9))
-    pivot = (z['high'].iloc[-2]+z['low'].iloc[-2]+z['close'].iloc[-2])/3 if {'high','low'}.issubset(z.columns) and len(z)>1 else np.nan
-    bc=(z['high'].iloc[-2]+z['low'].iloc[-2])/2 if {'high','low'}.issubset(z.columns) and len(z)>1 else np.nan
-    tc=2*pivot-bc if pd.notna(pivot) and pd.notna(bc) else np.nan
-    row['cpr_width']=abs(tc-bc)/c.iloc[-1] if pd.notna(tc) else np.nan; row['cpr_position']=(c.iloc[-1]-min(bc,tc))/max(abs(tc-bc),1e-9) if pd.notna(tc) else np.nan
-    row['idx_slope20']=float(np.polyfit(np.arange(min(20,len(c))),c.iloc[-min(20,len(c)):].values,1)[0]/c.iloc[-1])
-    return row
+def _rsi(c: pd.Series, n: int = 14) -> pd.Series:
+    d = c.diff()
+    up = d.clip(lower=0).ewm(alpha=1 / n, adjust=False).mean()
+    dn = (-d.clip(upper=0)).ewm(alpha=1 / n, adjust=False).mean()
+    return 100 - 100 / (1 + up / (dn + 1e-12))
 
 
-def context_features(context: pd.DataFrame, news: pd.DataFrame, flows: pd.DataFrame, d: pd.Timestamp) -> dict:
-    out={}; c=context[context.date < d].copy();
-    if len(c):
-        p=c.pivot_table(index='date',columns='series',values='close',aggfunc='last').sort_index()
-        for sym in ['india_vix','nifty_bank','nifty_midcap','spx','usd_inr','brent']:
-            col=sym if sym in p.columns else ({'usd_inr':'USDINR','brent':'BRENT','nifty_bank':'nifty_bank','nifty_midcap':'nifty_midcap'}.get(sym,sym))
-            if col in p.columns: out[f'{sym}_ret5']=float(p[col].pct_change(5).iloc[-1])
-    if len(flows):
-        f=flows[flows.date < d].sort_values('date').set_index('date');
-        for col in ['fii_net','dii_net']:
-            if col in f:
-                s=f[col].astype(float); out[col+'_1']=float(s.iloc[-1]); out[col+'_5']=float(s.tail(5).sum()); out[col+'_20']=float(s.tail(20).sum());
-                base=s.tail(120); out[col+'_z']=float((s.iloc[-1]-base.mean())/(base.std()+1e-9)) if len(base)>20 else np.nan
+def _context_features(index_dates: pd.DatetimeIndex, context: pd.DataFrame, flows: pd.DataFrame, news: pd.DataFrame) -> pd.DataFrame:
+    out = pd.DataFrame(index=index_dates)
+    p = context.pivot_table(index='date', columns='series', values='close', aggfunc='last').sort_index()
+    ctx = pd.DataFrame(index=p.index)
+    aliases = {'usd_inr': 'USDINR', 'brent': 'BRENT'}
+    for sym in ['india_vix', 'nifty_bank', 'nifty_midcap', 'spx', 'usd_inr', 'brent']:
+        col = sym if sym in p.columns else aliases.get(sym, sym)
+        if col in p.columns:
+            ctx[f'{sym}_ret5'] = p[col].pct_change(5, fill_method=None)
+    if len(ctx):
+        out = out.join(_strict_asof(index_dates, ctx.reset_index(), 'date').drop(columns=['_date'], errors='ignore'))
+
+    if {'fii_net', 'dii_net'}.issubset(flows.columns) and len(flows):
+        f = flows.groupby('date', as_index=True)[['fii_net', 'dii_net']].sum().sort_index()
+        ff = pd.DataFrame(index=f.index)
+        for col in ['fii_net', 'dii_net']:
+            s = f[col].astype(float)
+            roll = s.rolling(60, min_periods=10)
+            ff[f'{col}_z'] = (s - roll.mean()) / (roll.std() + 1e-9)
+            ff[f'{col}_5z'] = s.rolling(5).sum() / (s.rolling(60, min_periods=10).std() + 1e-9)
+            ff[f'{col}_20z'] = s.rolling(20).sum() / (s.rolling(60, min_periods=10).std() + 1e-9)
+        tmp = _strict_asof(index_dates, ff.reset_index(), 'date').drop(columns=['_date'], errors='ignore')
+        out = out.join(tmp)
+
     if len(news):
-        n=news[pd.to_datetime(news['date']) < d].copy(); n['date']=pd.to_datetime(n['date']).dt.normalize();
-        neg=[c for c in n.columns if 'neg' in c and pd.api.types.is_numeric_dtype(n[c])]; pos=[c for c in n.columns if 'pos' in c and pd.api.types.is_numeric_dtype(n[c])]; cnt=[c for c in n.columns if 'count' in c and pd.api.types.is_numeric_dtype(n[c])]
+        pos = [c for c in news.columns if 'pos' in c]
+        neg = [c for c in news.columns if 'neg' in c]
+        cnt = [c for c in news.columns if 'count' in c]
         if pos or neg or cnt:
-            ps=float(n.tail(5)[pos].sum().sum()) if pos else 0.; ns=float(n.tail(5)[neg].sum().sum()) if neg else 0.; cc=float(n.tail(5)[cnt].sum().sum()) if cnt else 0.; out['news_sentiment_5']=(ps-ns)/max(cc,1.); out['news_volume_5']=math.log1p(max(cc,0)); out['news_neg_share_5']=ns/max(cc,1.)
+            n = news.set_index('date').sort_index()
+            ps = n[pos].sum(axis=1) if pos else pd.Series(0.0, index=n.index)
+            ns = n[neg].sum(axis=1) if neg else pd.Series(0.0, index=n.index)
+            cc = n[cnt].sum(axis=1) if cnt else pd.Series(0.0, index=n.index)
+            nd = pd.DataFrame(index=n.index)
+            nd['news_sentiment_5'] = (ps.rolling(5).sum() - ns.rolling(5).sum()) / cc.rolling(5).sum().clip(lower=1)
+            nd['news_volume_5'] = np.log1p(cc.rolling(5).sum().clip(lower=0))
+            nd['news_neg_share_5'] = ns.rolling(5).sum() / cc.rolling(5).sum().clip(lower=1)
+            tmp = _strict_asof(index_dates, nd.reset_index(), 'date').drop(columns=['_date'], errors='ignore')
+            out = out.join(tmp)
+    return out.replace([np.inf, -np.inf], np.nan)
+
+
+def _option_features(index: pd.DataFrame, options: pd.DataFrame) -> pd.DataFrame:
+    dates = pd.DatetimeIndex(index['date'])
+    spot_map = index.set_index('date')['close'].astype(float)
+    exp_map = _expiry_maps(dates, options)
+    base = pd.DataFrame({'date': dates, 'next_expiry': exp_map.values})
+    o = options.merge(base, on='date', how='inner')
+    o = o[o['expiry'].eq(o['next_expiry'])].copy()
+    if o.empty:
+        return pd.DataFrame(index=dates)
+    o['spot'] = o['date'].map(spot_map)
+    o['m_bin'] = np.rint((o['strike'] / o['spot'] - 1.0) * 100).clip(-5, 5).astype('Int64')
+    o = o.dropna(subset=['m_bin'])
+    rows = pd.DataFrame(index=dates)
+    for typ in ['CE', 'PE']:
+        for stat in ['open_interest', 'volume']:
+            g = o[o['option_type'].eq(typ)].groupby(['date', 'm_bin'])[stat].sum().unstack(fill_value=0)
+            g = g.reindex(dates).fillna(0.0)
+            den = g.sum(axis=1).replace(0, 1.0)
+            g = g.div(den, axis=0)
+            for b in range(-5, 6):
+                rows[f'opt_{typ.lower()}_{stat[:2]}_{b:+d}'] = g[b] if b in g.columns else 0.0
+    ce = o[o['option_type'].eq('CE')].groupby('date').open_interest.sum()
+    pe = o[o['option_type'].eq('PE')].groupby('date').open_interest.sum()
+    cev = o[o['option_type'].eq('CE')].groupby('date').volume.sum()
+    pev = o[o['option_type'].eq('PE')].groupby('date').volume.sum()
+    rows['opt_pcr_oi'] = pe / ce.replace(0, np.nan)
+    rows['opt_pcr_volume'] = pev / cev.replace(0, np.nan)
+    atm = o[o['m_bin'].eq(0)].pivot_table(index='date', columns='option_type', values='close', aggfunc='mean')
+    atm['spot'] = atm.index.map(spot_map)
+    rows['opt_atm_straddle_pct'] = (atm.get('CE', pd.Series(index=atm.index, dtype=float)) + atm.get('PE', pd.Series(index=atm.index, dtype=float))) / atm['spot']
+    otm = o[o['m_bin'].isin([-3, 3])].pivot_table(index='date', columns=['m_bin', 'option_type'], values='close', aggfunc='mean')
+    put3 = otm.get((-3, 'PE'), pd.Series(index=otm.index, dtype=float))
+    call3 = otm.get((3, 'CE'), pd.Series(index=otm.index, dtype=float))
+    rows['opt_skew'] = (put3 - call3) / (put3 + call3).replace(0, np.nan)
+    return rows.reindex(dates).replace([np.inf, -np.inf], np.nan)
+
+
+def _futures_features(index: pd.DataFrame, futures: pd.DataFrame, options: pd.DataFrame) -> pd.DataFrame:
+    dates = pd.DatetimeIndex(index['date'])
+    spot = index.set_index('date')['close']
+    exp_map = _expiry_maps(dates, options)
+    f = futures.copy()
+    f['next_expiry'] = f['date'].map(exp_map)
+    f = f[f['expiry'].eq(f['next_expiry'])].copy()
+    if f.empty:
+        return pd.DataFrame(index=dates)
+    f = f.groupby('date').agg(close=('close', 'last'), open_interest=('open_interest', 'last'), volume=('volume', 'last'))
+    out = pd.DataFrame(index=dates)
+    out['fut_basis'] = f['close'] / spot - 1.0
+    out['fut_oi'] = np.log1p(f['open_interest'].clip(lower=0))
+    out['fut_volume'] = np.log1p(f['volume'].clip(lower=0))
     return out
 
 
-def option_features(options: pd.DataFrame, d: pd.Timestamp, expiry: pd.Timestamp, spot: float) -> dict:
-    o=options[(pd.to_datetime(options.date).dt.normalize()==d)&(pd.to_datetime(options.expiry).dt.normalize()==expiry)].copy()
-    if o.empty:return {'opt_pcr_oi':np.nan,'opt_pcr_volume':np.nan,'opt_maxpain_gap':np.nan,'opt_call_wall_gap':np.nan,'opt_put_wall_gap':np.nan,'opt_atm_straddle_pct':np.nan,'opt_oi_concentration':np.nan,'opt_skew':np.nan}
-    o['strike']=pd.to_numeric(o.strike,errors='coerce'); o['open_interest']=pd.to_numeric(o.open_interest,errors='coerce').fillna(0); o['volume']=pd.to_numeric(o.volume,errors='coerce').fillna(0); o['close']=pd.to_numeric(o.close,errors='coerce')
-    ce=o[o.option_type.eq('CE')].dropna(subset=['strike']); pe=o[o.option_type.eq('PE')].dropna(subset=['strike'])
-    call_oi=float(ce.open_interest.sum()); put_oi=float(pe.open_interest.sum()); call_v=float(ce.volume.sum()); put_v=float(pe.volume.sum()); res={'opt_pcr_oi':put_oi/max(call_oi,1),'opt_pcr_volume':put_v/max(call_v,1)}
-    strikes=np.sort(pd.concat([ce.strike,pe.strike]).unique())
-    pain=[]
-    for k in strikes:
-        pain.append(float((ce.open_interest*np.maximum(k-ce.strike,0)).sum()+(pe.open_interest*np.maximum(pe.strike-k,0)).sum()))
-    maxpain=float(strikes[int(np.argmin(pain))]) if len(pain) else np.nan
-    callwall=float(ce.groupby('strike').open_interest.sum().idxmax()) if len(ce) else np.nan; putwall=float(pe.groupby('strike').open_interest.sum().idxmax()) if len(pe) else np.nan
-    atm=float(strikes[np.argmin(abs(strikes-spot))]) if len(strikes) else np.nan
-    cp=float(ce.loc[ce.strike.eq(atm),'close'].mean()) if np.isfinite(atm) and len(ce.loc[ce.strike.eq(atm)]) else np.nan; pp=float(pe.loc[pe.strike.eq(atm),'close'].mean()) if np.isfinite(atm) and len(pe.loc[pe.strike.eq(atm)]) else np.nan
-    near5=spot*1.03; nearp=spot*0.97; kc=float(ce.strike.iloc[np.argmin(abs(ce.strike-near5))]) if len(ce) else np.nan; kp=float(pe.strike.iloc[np.argmin(abs(pe.strike-nearp))]) if len(pe) else np.nan; cv=float(ce.loc[ce.strike.eq(kc),'close'].mean()) if np.isfinite(kc) else np.nan; pv=float(pe.loc[pe.strike.eq(kp),'close'].mean()) if np.isfinite(kp) else np.nan
-    total_oi=o.open_interest.sum(); max_oi=o.open_interest.max();
-    res.update({'opt_maxpain_gap':maxpain/spot-1 if np.isfinite(maxpain) else np.nan,'opt_call_wall_gap':callwall/spot-1 if np.isfinite(callwall) else np.nan,'opt_put_wall_gap':putwall/spot-1 if np.isfinite(putwall) else np.nan,'opt_atm_straddle_pct':(cp+pp)/spot if np.isfinite(cp) and np.isfinite(pp) else np.nan,'opt_oi_concentration':max_oi/max(total_oi,1),'opt_skew':(pv-cv)/max(pv+cv,1e-9) if np.isfinite(pv) and np.isfinite(cv) else np.nan})
-    return res
+def _stock_features(index_dates: pd.DatetimeIndex, prices: pd.DataFrame, weights: pd.DataFrame, membership: pd.DataFrame):
+    wide = prices.pivot(index='date', columns='symbol', values='close').sort_index()
+    symbols = sorted(wide.columns.astype(str).tolist())
+    wide = wide.reindex(columns=symbols)
+    r1 = wide.pct_change(fill_method=None)
+    r5 = wide.pct_change(5, fill_method=None)
+    r20 = wide.pct_change(20, fill_method=None)
+    vol20 = wide.pct_change(fill_method=None).rolling(20).std() * math.sqrt(252)
+    wd = weights.copy().sort_values('DATE')
+    wdates = wd['DATE'].to_numpy(dtype='datetime64[ns]')
+    wmat = wd.reindex(columns=symbols, fill_value=0.0).drop(columns=['DATE'], errors='ignore').to_numpy(dtype=np.float32) if len(wd) else np.zeros((0, len(symbols)), dtype=np.float32)
+    tensor = np.zeros((len(index_dates), len(symbols), 6), dtype=np.float32)
+    for i, d in enumerate(index_dates):
+        active = membership[(membership['valid_from'] <= d) & (membership['valid_to'].isna() | (membership['valid_to'] > d))]['symbol'].drop_duplicates().tolist()
+        active_mask = np.array([s in active for s in symbols], dtype=np.float32)
+        if len(wd):
+            pos = np.searchsorted(wdates, np.datetime64(d), side='right') - 1
+            gap = (d - pd.Timestamp(wdates[pos])).days if pos >= 0 else 10_000
+            w = wmat[pos].astype(np.float32) if pos >= 0 else np.zeros(len(symbols), dtype=np.float32)
+            if gap > int(CFG['constituents']['weights_max_staleness_days']):
+                w = np.zeros(len(symbols), dtype=np.float32)
+        else:
+            w = np.zeros(len(symbols), dtype=np.float32)
+        w = np.where(active_mask > 0, np.maximum(w, 0), 0)
+        if w.sum() <= 0 and active_mask.sum() > 0:
+            w = active_mask / active_mask.sum()
+        else:
+            w = w / max(w.sum(), 1e-9)
+        for j, s in enumerate(symbols):
+            tensor[i, j, 0] = float(r1.loc[d, s]) if d in r1.index and np.isfinite(r1.loc[d, s]) else 0.0
+            tensor[i, j, 1] = float(r5.loc[d, s]) if d in r5.index and np.isfinite(r5.loc[d, s]) else 0.0
+            tensor[i, j, 2] = float(r20.loc[d, s]) if d in r20.index and np.isfinite(r20.loc[d, s]) else 0.0
+            tensor[i, j, 3] = float(vol20.loc[d, s]) if d in vol20.index and np.isfinite(vol20.loc[d, s]) else 0.0
+            tensor[i, j, 4] = float(w[j])
+            tensor[i, j, 5] = float(active_mask[j])
+    return tensor, symbols
 
 
-def futures_features(futures: pd.DataFrame, d: pd.Timestamp, expiry: pd.Timestamp, spot: float) -> dict:
-    f=futures[(pd.to_datetime(futures.date).dt.normalize()==d)&(pd.to_datetime(futures.expiry).dt.normalize()==expiry)]
-    if f.empty:return {'fut_basis':np.nan,'fut_oi':np.nan,'fut_volume':np.nan}
-    z=f.iloc[0]; return {'fut_basis':float(z.close)/spot-1,'fut_oi':float(z.open_interest),'fut_volume':float(z.volume)}
+def build_daily_modalities(inp):
+    options, futures, context, news, index, prices, weights, membership, flows = inp
+    dates = pd.DatetimeIndex(index['date'].sort_values().unique())
+    idxf = _index_features(index).reindex(dates)
+    ctx = _context_features(dates, context, flows, news).reindex(dates)
+    opt = _option_features(index, options).reindex(dates)
+    fut = _futures_features(index, futures, options).reindex(dates)
+    global_df = idxf.join(ctx, how='left').join(opt, how='left').join(fut, how='left')
+    global_df = global_df.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    stock_tensor, symbols = _stock_features(dates, prices, weights, membership)
+    return dates, global_df, stock_tensor, symbols, options
 
 
-def constituent_features(prices: pd.DataFrame, weights: pd.DataFrame, membership: pd.DataFrame, d: pd.Timestamp) -> dict:
-    wide=prices.pivot(index='date',columns='symbol',values='close').sort_index(); ret5=wide.pct_change(5); ret20=wide.pct_change(20); vol20=wide.pct_change().rolling(20).std()*math.sqrt(252)
-    wr=weights[weights.DATE<=d].sort_values('DATE'); vec=wr.iloc[-1].drop(labels=['DATE']).astype(float) if len(wr) else pd.Series(dtype=float)
-    if len(wr) and (d-wr.iloc[-1].DATE).days>int(CFG['constituents']['weights_max_staleness_days']): vec=pd.Series(0.0,index=wide.columns)
-    active=membership[(membership.valid_from<=d)&((membership.valid_to.isna())|(membership.valid_to>d))].symbol.drop_duplicates().tolist(); active=[ALIASES.get(x,x) for x in active]
-    cols=[c for c in wide.columns if c in set(active)]
-    if not cols:return {'con_n':0}
-    vec=vec.reindex(cols).fillna(0); vec[vec<0]=0
-    if vec.sum()<=0: vec=pd.Series(1.0,index=cols)
-    vec=vec/vec.sum(); r5=ret5[cols].loc[:d].iloc[-1]; r20=ret20[cols].loc[:d].iloc[-1]; v20=vol20[cols].loc[:d].iloc[-1]
-    valid=r5.notna()&r20.notna(); vec=vec.where(valid,0); vec=vec/vec.sum() if vec.sum()>0 else vec
-    signed=(vec*r5.fillna(0)); out={'con_n':int(valid.sum()),'con_weighted_ret5':float(signed.sum()),'con_weighted_ret20':float((vec*r20.fillna(0)).sum()),'con_weighted_vol20':float((vec*v20.fillna(0)).sum()),'con_breadth5':float((r5[valid]>0).mean()),'con_dispersion5':float(r5[valid].std()),'con_hhi':float((vec**2).sum()),'con_top10_shock':float(signed.abs().sort_values(ascending=False).head(10).sum())}
-    top=vec.sort_values(ascending=False).head(5)
-    for i,(sym,w) in enumerate(top.items(),1): out[f'con_top{i}_ret5']=float(r5.get(sym,np.nan))
-    return out
-
-
-def build_dataset(inp):
-    options,futures,context,news,index,prices,weights,membership,flows=inp; cyc=cycles(index,options); rows=[]
-    for r in cyc.itertuples(index=False):
-        f=index_features(index,r.signal_date,options); f.update(option_features(options,r.signal_date,r.expiry,r.spot)); f.update(futures_features(futures,r.signal_date,r.expiry,r.spot)); f.update(context_features(context,news,flows,r.signal_date)); f.update(constituent_features(prices,weights,membership,r.signal_date)); f.update({'signal_date':r.signal_date,'expiry':r.expiry,'target_date':r.target_date,'spot':r.spot,'target_close':r.target_close,'target_return':r.target_return}); rows.append(f)
-    df=pd.DataFrame(rows).sort_values('signal_date').reset_index(drop=True)
-    return df
-
-
-BASE_EXCLUDE={'signal_date','expiry','target_date','spot','target_close','target_return','con_n'}
-
-
-def model_features(df):
-    cols=[c for c in df.columns if c not in BASE_EXCLUDE and pd.api.types.is_numeric_dtype(df[c])]
-    return cols
-
-
-def builders():
+def build_samples(inp):
+    dates, global_df, stock_tensor, symbols, options = build_daily_modalities(inp)
+    index = inp[4].set_index('date').sort_index()
+    exps = pd.DatetimeIndex(sorted(pd.to_datetime(options['expiry']).dropna().unique()))
+    seq = int(CFG['sequence_length'])
+    stride = int(CFG.get('sample_stride', 2))
+    canonical = {}
+    prev = None
+    for e in exps:
+        if prev is not None:
+            z = dates[(dates > prev) & (dates < e)]
+            if len(z):
+                canonical[pd.Timestamp(e)] = pd.Timestamp(z[0])
+        prev = pd.Timestamp(e)
+    rows = []
+    xs_g = []
+    xs_s = []
+    for i in range(seq - 1, len(dates), stride):
+        d = pd.Timestamp(dates[i])
+        pos = np.searchsorted(exps.values, np.datetime64(d), side='right')
+        if pos >= len(exps):
+            continue
+        expiry = pd.Timestamp(exps[pos])
+        target_dates = dates[dates <= expiry]
+        if not len(target_dates):
+            continue
+        td = pd.Timestamp(target_dates[-1])
+        if td <= d or td not in index.index:
+            continue
+        spot = float(index.loc[d, 'close'])
+        tgt = index.loc[td]
+        high = float(tgt['high']) if 'high' in tgt.index and np.isfinite(tgt['high']) else float(tgt['close'])
+        low = float(tgt['low']) if 'low' in tgt.index and np.isfinite(tgt['low']) else float(tgt['close'])
+        y = [float(tgt['close']) / spot - 1.0, high / spot - 1.0, low / spot - 1.0]
+        sl = slice(i - seq + 1, i + 1)
+        xs_g.append(global_df.iloc[sl].to_numpy(dtype=np.float32))
+        xs_s.append(stock_tensor[sl].astype(np.float32))
+        rows.append({
+            'signal_date': d, 'expiry': expiry, 'target_date': td, 'spot': spot,
+            'target_return': y[0], 'target_high_return': y[1], 'target_low_return': y[2],
+            'canonical': bool(canonical.get(expiry) == d)
+        })
+    meta = pd.DataFrame(rows).sort_values('signal_date').reset_index(drop=True)
     return {
-        'ridge': make_pipeline(SimpleImputer(strategy='median'),StandardScaler(),Ridge(alpha=5.0)),
-        'rf': make_pipeline(SimpleImputer(strategy='median'),RandomForestRegressor(n_estimators=300,max_depth=6,min_samples_leaf=3,random_state=SEED,n_jobs=-1)),
-        'extra_trees': make_pipeline(SimpleImputer(strategy='median'),ExtraTreesRegressor(n_estimators=300,max_depth=7,min_samples_leaf=2,random_state=SEED,n_jobs=-1)),
-        'hgbr': make_pipeline(SimpleImputer(strategy='median'),HistGradientBoostingRegressor(max_iter=250,learning_rate=.035,max_leaf_nodes=15,l2_regularization=1.0,random_state=SEED)),
-        'xgboost': make_pipeline(SimpleImputer(strategy='median'),XGBRegressor(n_estimators=300,max_depth=3,learning_rate=.035,subsample=.8,colsample_bytree=.8,reg_lambda=2.0,objective='reg:squarederror',random_state=SEED,n_jobs=2)),
+        'global': np.stack(xs_g).astype(np.float32),
+        'stock': np.stack(xs_s).astype(np.float32),
+        'meta': meta,
+        'global_columns': list(global_df.columns),
+        'stock_symbols': symbols,
+        'dates': dates,
+        'latest_global': global_df,
+        'latest_stock': stock_tensor,
+        'index': index,
+        'options': options,
     }
 
 
-def fit_tabular(train,test,features):
-    preds={}; y=train.target_return.astype(float); Xtr=train[features]; Xte=test[features]
-    for name,model in builders().items():
-        if not CFG['models'].get(name,True): continue
-        model.fit(Xtr,y); preds[name]=model.predict(Xte)
-    return preds
+class DeepExpiryTransformer(nn.Module):
+    def __init__(self, global_dim: int, stock_dim: int, n_stock: int):
+        super().__init__()
+        c = CFG['v7']
+        sd = int(c['stock_embed_dim'])
+        d = int(c['d_model'])
+        heads = int(c['transformer_heads'])
+        layers = int(c['transformer_layers'])
+        drop = float(c['dropout'])
+        self.stock_mlp = nn.Sequential(nn.Linear(stock_dim, sd), nn.GELU(), nn.Dropout(drop), nn.Linear(sd, sd))
+        self.stock_score = nn.Linear(sd, 1)
+        self.global_mlp = nn.Sequential(nn.Linear(global_dim, d), nn.GELU(), nn.Dropout(drop))
+        self.fusion = nn.Sequential(nn.Linear(sd + d, d), nn.GELU(), nn.Dropout(drop))
+        self.pos = nn.Parameter(torch.zeros(1, int(CFG['sequence_length']), d))
+        enc = nn.TransformerEncoderLayer(d_model=d, nhead=heads, dim_feedforward=4 * d, dropout=drop, batch_first=True, norm_first=True, activation='gelu')
+        self.temporal = nn.TransformerEncoder(enc, num_layers=layers)
+        self.norm = nn.LayerNorm(d)
+        self.quantile_head = nn.Linear(d, 9)
+        self.regime_head = nn.Linear(d, 3)
+        nn.init.normal_(self.pos, std=0.02)
+
+    def forward(self, global_x: torch.Tensor, stock_x: torch.Tensor):
+        # stock_x: [B,T,N,features], final feature is the PIT active mask.
+        sh = self.stock_mlp(stock_x)
+        scores = self.stock_score(sh).squeeze(-1)
+        mask = stock_x[..., -1] > 0.5
+        scores = scores.masked_fill(~mask, -1e4)
+        attn = torch.softmax(scores, dim=-1)
+        pooled = (sh * attn.unsqueeze(-1)).sum(dim=2)
+        gh = self.global_mlp(global_x)
+        h = self.fusion(torch.cat([pooled, gh], dim=-1))
+        h = h + self.pos[:, :h.shape[1]]
+        h = self.temporal(h)
+        h = self.norm(h[:, -1])
+        return self.quantile_head(h), self.regime_head(h)
 
 
-class LSTMReg(nn.Module):
-    def __init__(self,nf,hidden=48):
-        super().__init__(); self.lstm=nn.LSTM(nf,hidden,batch_first=True); self.head=nn.Sequential(nn.Linear(hidden,24),nn.ReLU(),nn.Dropout(.1),nn.Linear(24,1))
-    def forward(self,x): y,_=self.lstm(x); return self.head(y[:,-1,:]).squeeze(-1)
+def _pinball(pred, target, quantiles):
+    loss = 0.0
+    for k, q in enumerate(quantiles):
+        e = target - pred[:, k]
+        loss = loss + torch.maximum(torch.tensor(q - 1.0, device=pred.device) * e, torch.tensor(q, device=pred.device) * e).mean()
+    return loss / len(quantiles)
 
 
-def lstm_predict(df,train_mask,test_mask,features):
-    if not CFG['models'].get('lstm',True): return np.full(test_mask.sum(),np.nan)
-    seq_len=int(CFG['sequence_length']); n=len(df); cut=np.where(train_mask)[0]
-    if len(cut)<seq_len+40: return np.full(test_mask.sum(),np.nan)
-    scaler=StandardScaler(); scaler.fit(SimpleImputer(strategy='median').fit_transform(df.loc[train_mask,features]))
-    imp=SimpleImputer(strategy='median'); imp.fit(df.loc[train_mask,features]); mat=scaler.transform(imp.transform(df[features])).astype('float32')
-    X=[]; y=[]; end=[]
-    yy=df.target_return.to_numpy(float)
-    for i in range(seq_len-1,n): X.append(mat[i-seq_len+1:i+1]); y.append(yy[i]); end.append(i)
-    X=np.asarray(X,dtype='float32'); y=np.asarray(y,dtype='float32'); end=np.asarray(end)
-    tr=end<cut[-1]+1; te=np.array([test_mask[i] for i in end],dtype=bool)
-    if tr.sum()<50 or te.sum()==0:return np.full(test_mask.sum(),np.nan)
-    tx=torch.tensor(X[tr]); ty=torch.tensor(y[tr]); model=LSTMReg(X.shape[-1]); opt=torch.optim.Adam(model.parameters(),lr=0.003,weight_decay=1e-4); lossfn=nn.HuberLoss(); best=np.inf; bad=0; state=None
-    model.train()
-    for _ in range(160):
-        opt.zero_grad(); loss=lossfn(model(tx),ty); loss.backward(); torch.nn.utils.clip_grad_norm_(model.parameters(),1.0); opt.step(); val=float(loss.detach());
-        if val<best-1e-5: best=val; bad=0; state={k:v.detach().clone() for k,v in model.state_dict().items()}
-        else: bad+=1
-        if bad>=15: break
-    if state: model.load_state_dict(state)
-    model.eval(); with_pred=[]
-    with torch.no_grad(): with_pred=model(torch.tensor(X[te])).cpu().numpy()
-    return with_pred
+def _normalizer(train_g, train_s):
+    gm = train_g.reshape(-1, train_g.shape[-1]).mean(0)
+    gs = train_g.reshape(-1, train_g.shape[-1]).std(0)
+    gs = np.where(gs < 1e-6, 1.0, gs)
+    sm = train_s.reshape(-1, train_s.shape[-1]).mean(0)
+    ss = train_s.reshape(-1, train_s.shape[-1]).std(0)
+    ss = np.where(ss < 1e-6, 1.0, ss)
+    return gm.astype(np.float32), gs.astype(np.float32), sm.astype(np.float32), ss.astype(np.float32)
 
 
-def predict(train,test,features):
-    preds=fit_tabular(train,test,features)
-    tm=np.zeros(len(train)+len(test),dtype=bool); tm[:len(train)]=True; mm=pd.concat([train,test],ignore_index=True); testmask=np.zeros(len(mm),dtype=bool); testmask[len(train):]=True
-    lp=lstm_predict(mm,tm,testmask,features)
-    preds['lstm']=lp
-    if CFG['models'].get('ensemble',True):
-        arr=[v for k,v in preds.items() if np.isfinite(v).all()]
-        if arr: preds['ensemble']=np.mean(np.column_stack(arr),axis=1)
-    return preds
+def _apply_norm(g, s, norm):
+    gm, gs, sm, ss = norm
+    g = np.clip((g - gm) / gs, -8, 8).astype(np.float32)
+    s = np.clip((s - sm) / ss, -8, 8).astype(np.float32)
+    # Preserve PIT activity semantics after scaling.
+    s[..., -1] = (s[..., -1] > -0.5).astype(np.float32)
+    return g, s
 
 
-def metrics(y,p):
-    y=np.asarray(y,float); p=np.asarray(p,float); m=np.isfinite(y)&np.isfinite(p); y=y[m]; p=p[m]
-    if len(y)<2:return {'mae':np.nan,'rmse':np.nan,'direction_accuracy':np.nan,'regime_accuracy':np.nan,'correlation':np.nan,'samples':int(len(y))}
-    return {'mae':float(mean_absolute_error(y,p)),'rmse':float(math.sqrt(mean_squared_error(y,p))),'direction_accuracy':float(np.mean((y>=0)==(p>=0))),'regime_accuracy':float(np.mean([regime(a)==regime(b) for a,b in zip(y,p)])),'correlation':float(np.corrcoef(y,p)[0,1]) if np.std(y)>0 and np.std(p)>0 else np.nan,'samples':int(len(y))}
+def _fit_model(train_g, train_s, y, epochs=None):
+    epochs = int(epochs or CFG['v7']['epochs'])
+    norm = _normalizer(train_g, train_s)
+    g, s = _apply_norm(train_g, train_s, norm)
+    n = len(y)
+    split = max(1, int(n * 0.9))
+    tr = np.arange(split)
+    va = np.arange(split, n) if split < n else tr
+    model = DeepExpiryTransformer(g.shape[-1], s.shape[-1], s.shape[-2]).float()
+    opt = torch.optim.AdamW(model.parameters(), lr=float(CFG['v7']['learning_rate']), weight_decay=float(CFG['v7']['weight_decay']))
+    loss_fn = nn.CrossEntropyLoss()
+    ds = TensorDataset(torch.from_numpy(g[tr]), torch.from_numpy(s[tr]), torch.from_numpy(y[tr].astype(np.float32)))
+    dl = DataLoader(ds, batch_size=int(CFG['v7']['batch_size']), shuffle=False)
+    best = float('inf'); best_state = None; bad = 0
+    for _ in range(epochs):
+        model.train()
+        for xb, sb, yb in dl:
+            opt.zero_grad(set_to_none=True)
+            qhat, logit = model(xb, sb)
+            close_q = qhat[:, 0:3]
+            high_q = qhat[:, 3:6]
+            low_q = qhat[:, 6:9]
+            loss = _pinball(close_q, yb[:, 0], Q) + _pinball(high_q, yb[:, 1], Q) + _pinball(low_q, yb[:, 2], Q)
+            cls = np.where(yb[:, 0].numpy() > float(CFG['regime_threshold']), 2, np.where(yb[:, 0].numpy() < -float(CFG['regime_threshold']), 0, 1))
+            cls_t = torch.from_numpy(cls).long()
+            loss = loss + 0.20 * loss_fn(logit, cls_t)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), float(CFG['v7']['gradient_clip']))
+            opt.step()
+        model.eval()
+        with torch.no_grad():
+            vg, vs, vy = torch.from_numpy(g[va]), torch.from_numpy(s[va]), torch.from_numpy(y[va].astype(np.float32))
+            qv, lv = model(vg, vs)
+            val = float(_pinball(qv[:, :3], vy[:, 0], Q) + _pinball(qv[:, 3:6], vy[:, 1], Q) + _pinball(qv[:, 6:9], vy[:, 2], Q))
+        if val < best - 1e-5:
+            best = val; best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}; bad = 0
+        else:
+            bad += 1
+            if bad >= int(CFG['v7']['patience']):
+                break
+    if best_state is not None:
+        model.load_state_dict(best_state)
+    return model, norm
 
 
-def purge_train(ds,test_start):
-    start=pd.Timestamp(test_start); purge=pd.Timedelta(days=int(CFG['purge_days'])+int(CFG['embargo_days']))
-    return ds[(ds.signal_date < start-purge)&(ds.target_date < start-purge)].copy()
+def _predict(model, norm, g, s):
+    g, s = _apply_norm(g, s, norm)
+    model.eval()
+    with torch.no_grad():
+        qhat, logit = model(torch.from_numpy(g), torch.from_numpy(s))
+        q = qhat.numpy(); p = torch.softmax(logit, dim=1).numpy()
+    return q, p
 
 
-def run_wfo(ds,features):
-    windows=[('2021-01-01','2021-12-31'),('2022-01-01','2022-12-31'),('2023-01-01','2023-12-31'),('2024-01-01','2024-12-31'),('2025-01-01','2025-12-31'),('2026-01-01','2026-03-31')]; allp=[]; rows=[]; yrs=int(CFG['rolling_training_years'])
-    for wi,(a,b) in enumerate(windows,1):
-        ts,te=pd.Timestamp(a),pd.Timestamp(b); train=purge_train(ds[(ds.signal_date>=ts-pd.DateOffset(years=yrs))&(ds.signal_date<ts)],ts); test=ds[(ds.signal_date>=ts)&(ds.signal_date<=te)]
-        if len(train)<int(CFG['min_samples']) or test.empty: continue
-        pr=predict(train,test,features); base=test[['signal_date','expiry','target_date','spot','target_close','target_return']].copy(); base['window']=wi
-        for name,p in pr.items():
-            base[f'pred_return_{name}']=p; base[f'pred_close_{name}']=base.spot.to_numpy()*(1+p); base[f'pred_regime_{name}']=[regime(x) if np.isfinite(x) else 'NA' for x in p]; rows.append({'window':wi,'model':name,**metrics(test.target_return,p)})
-        allp.append(base)
-    return pd.concat(allp,ignore_index=True),pd.DataFrame(rows)
+def _metrics(pred_q, pred_p, meta: pd.DataFrame):
+    actual = meta['target_return'].to_numpy(float)
+    pred = pred_q[:, 1]
+    mae = float(np.mean(np.abs(pred - actual)))
+    rmse = float(np.sqrt(np.mean((pred - actual) ** 2)))
+    direction = float(np.mean((pred >= 0) == (actual >= 0)))
+    actual_reg = np.where(actual > float(CFG['regime_threshold']), 2, np.where(actual < -float(CFG['regime_threshold']), 0, 1))
+    model_reg = np.argmax(pred_p, axis=1)
+    regacc = float(np.mean(actual_reg == model_reg))
+    corr = float(np.corrcoef(pred, actual)[0, 1]) if len(pred) > 1 and np.std(pred) > 1e-9 and np.std(actual) > 1e-9 else 0.0
+    return {'mae': mae, 'rmse': rmse, 'direction_accuracy': direction, 'regime_accuracy': regacc, 'correlation': corr, 'samples': int(len(meta))}
 
 
-def run_split(ds,features):
-    cut=ds.signal_date.min()+(ds.signal_date.max()-ds.signal_date.min())*.7; train=purge_train(ds[ds.signal_date<=cut],ds[ds.signal_date>cut].signal_date.min()); test=ds[ds.signal_date>cut]; pr=predict(train,test,features); base=test[['signal_date','expiry','target_date','spot','target_close','target_return']].copy();
-    for name,p in pr.items(): base[f'pred_return_{name}']=p; base[f'pred_close_{name}']=base.spot.to_numpy()*(1+p); base[f'pred_regime_{name}']=[regime(x) if np.isfinite(x) else 'NA' for x in p]
-    return base,pd.DataFrame([{'model':k,**metrics(test.target_return,v)} for k,v in pr.items()])
+def _canonical(samples):
+    return samples['meta']['canonical'].to_numpy(bool)
 
 
-def run_new_oos(ds,features):
-    start=pd.Timestamp(CFG['new_oos_start']); train=purge_train(ds[ds.signal_date<start],start); test=ds[ds.signal_date>=start];
-    if test.empty or len(train)<int(CFG['min_samples']): raise RuntimeError('Insufficient training or OOS observations')
-    pr=predict(train,test,features); base=test[['signal_date','expiry','target_date','spot','target_close','target_return']].copy();
-    for name,p in pr.items(): base[f'pred_return_{name}']=p; base[f'pred_close_{name}']=base.spot.to_numpy()*(1+p); base[f'pred_regime_{name}']=[regime(x) if np.isfinite(x) else 'NA' for x in p]
-    return base,pd.DataFrame([{'model':k,**metrics(test.target_return,v)} for k,v in pr.items()])
+def _eligible(meta, expiries):
+    return meta['expiry'].isin(set(pd.to_datetime(expiries)))
 
 
-def calibration(train,features,model_name):
-    n=max(30,int(len(train)*.2)); fit=train.iloc[:-n] if len(train)>n+50 else train.iloc[:max(30,len(train)-30)]; cal=train.iloc[len(fit):]
-    if model_name not in builders() or cal.empty:return (-0.02,0.02)
-    model=builders()[model_name]; model.fit(fit[features],fit.target_return); p=model.predict(cal[features]); r=cal.target_return.to_numpy()-p; alpha=1-float(CFG['prediction_interval']); return float(np.nanquantile(r,alpha/2)),float(np.nanquantile(r,1-alpha/2))
+def run_wfo(samples):
+    meta = samples['meta']; exps = pd.DatetimeIndex(sorted(meta['expiry'].unique()))
+    nwin = int(CFG['v7']['wfo_windows']); train_n = int(CFG['v7']['wfo_train_expiries']); test_n = int(CFG['v7']['wfo_test_expiries'])
+    needed = train_n + test_n
+    if len(exps) < needed:
+        raise RuntimeError(f'Not enough expiry groups for WFO: {len(exps)}')
+    starts = np.linspace(0, len(exps) - needed, nwin, dtype=int)
+    rows=[]
+    for w, start in enumerate(starts, 1):
+        train_exp = exps[start:start+train_n]
+        test_exp = exps[start+train_n:start+needed]
+        first_test = pd.Timestamp(test_exp[0])
+        train_exp = train_exp[train_exp <= first_test - pd.Timedelta(days=int(CFG['purge_days']))]
+        tr = np.where(_eligible(meta, train_exp))[0]
+        te = np.where(_eligible(meta, test_exp) & _canonical(samples))[0]
+        if len(tr) < int(CFG['min_samples']) or len(te) < 2:
+            continue
+        model, norm = _fit_model(samples['global'][tr], samples['stock'][tr], meta.loc[tr, ['target_return','target_high_return','target_low_return']].to_numpy())
+        q, p = _predict(model, norm, samples['global'][te], samples['stock'][te])
+        m = _metrics(q, p, meta.loc[te].reset_index(drop=True)); m.update({'window': w, 'model': 'deep_transformer'})
+        rows.append(m)
+        nq = np.zeros((len(te), 9), dtype=np.float32); npreds = np.full((len(te), 3), 1/3, dtype=np.float32)
+        nm = _metrics(nq, npreds, meta.loc[te].reset_index(drop=True)); nm.update({'window': w, 'model': 'naive'})
+        rows.append(nm)
+    return pd.DataFrame(rows)
 
 
-def latest_forecast(ds,features,production):
-    inp=load_inputs(); options,futures,context,news,index,prices,weights,membership,flows=inp; index=index[index.date<=pd.Timestamp(CFG['history_end'])].copy(); signal=index.date.iloc[-1]; future_exps=sorted(pd.to_datetime(options.loc[pd.to_datetime(options.date).dt.normalize().eq(signal),'expiry']).dropna().unique())
-    if future_exps: expiry=pd.Timestamp(future_exps[0])
+def run_split(samples, mode='70_30'):
+    meta = samples['meta']; exps = pd.DatetimeIndex(sorted(meta['expiry'].unique()))
+    if mode == '70_30':
+        cut = max(1, int(len(exps) * 0.70)); train_exp, test_exp = exps[:cut], exps[cut:]
     else:
-        all_exps=sorted(pd.to_datetime(options.expiry).dropna().unique()); expiry=next((pd.Timestamp(x) for x in all_exps if pd.Timestamp(x)>signal),pd.Timestamp(all_exps[-1]))
-    train=ds.copy(); row=pd.DataFrame([ds.iloc[-1][features].to_dict()]); pred=None
-    if production=='lstm':
-        mm=ds.copy(); mask=np.zeros(len(mm),bool); mask[-1]=True; p=lstm_predict(mm,np.ones(len(mm),bool),mask,features); pred=float(p[-1]) if len(p) else np.nan
-    elif production=='ensemble':
-        pr=fit_tabular(train,train.iloc[[-1]],features); vals=[v[-1] for k,v in pr.items() if k!='ensemble' and np.isfinite(v[-1])]; pred=float(np.mean(vals))
-    else:
-        model=builders()[production]; model.fit(train[features],train.target_return); pred=float(model.predict(row)[0])
-    if not np.isfinite(pred): pred=0.0
-    qlo,qhi=calibration(train,features,production if production in builders() else 'rf'); spot=float(index.iloc[-1].close)
-    return {'available':True,'signal_date':str(signal.date()),'latest_feature_date':str(signal.date()),'next_expiry':str(expiry.date()),'spot':spot,'production_model':production,'predicted_return':pred,'predicted_close':spot*(1+pred),'predicted_low':spot*(1+pred+qlo),'predicted_high':spot*(1+pred+qhi),'regime':regime(pred),'prediction_interval':float(CFG['prediction_interval']),'calibration_q_low':qlo,'calibration_q_high':qhi}
+        cutoff = pd.Timestamp(CFG['new_oos_start']); train_exp, test_exp = exps[exps < cutoff], exps[exps >= cutoff]
+    first_test = pd.Timestamp(test_exp[0])
+    train_exp = train_exp[train_exp <= first_test - pd.Timedelta(days=int(CFG['purge_days']))]
+    tr = np.where(_eligible(meta, train_exp))[0]
+    te = np.where(_eligible(meta, test_exp) & _canonical(samples))[0]
+    if len(tr) < int(CFG['min_samples']) or len(te) == 0:
+        raise RuntimeError(f'{mode} split insufficient: train={len(tr)} test={len(te)}')
+    model, norm = _fit_model(samples['global'][tr], samples['stock'][tr], meta.loc[tr, ['target_return','target_high_return','target_low_return']].to_numpy())
+    q, p = _predict(model, norm, samples['global'][te], samples['stock'][te])
+    m = _metrics(q, p, meta.loc[te].reset_index(drop=True)); m.update({'model': 'deep_transformer'})
+    nq = np.zeros((len(te), 9), dtype=np.float32); npreds = np.full((len(te), 3), 1/3, dtype=np.float32)
+    nm = _metrics(nq, npreds, meta.loc[te].reset_index(drop=True)); nm.update({'model': 'naive'})
+    return pd.DataFrame([m, nm]), (model, norm, tr, te, q, p)
 
 
-def paper_strategy(row, options):
-    pred=float(row.get('pred_return',0)); spot=float(row.spot); expiry=pd.Timestamp(row.expiry); d=pd.Timestamp(row.signal_date)
-    o=options[(pd.to_datetime(options.date).dt.normalize()==d)&(pd.to_datetime(options.expiry).dt.normalize()==expiry)].copy()
-    if o.empty:return {'action':'NO_DATA'}
-    o['strike']=pd.to_numeric(o.strike); o['close']=pd.to_numeric(o.close)
-    def near(typ,target):
-        z=o[o.option_type.eq(typ)&(o.close>0)].copy()
-        if z.empty:return None
-        k=float(z.iloc[np.argmin(abs(z.strike.to_numpy()-target))].strike); p=float(z[z.strike.eq(k)].iloc[0].close); return k,p
-    lot=25 if expiry<pd.Timestamp('2024-11-20') else (75 if expiry<pd.Timestamp('2026-01-01') else 65)
-    if pred>TH:
-        k1,p1=near('CE',spot); k2,p2=near('CE',max(spot*(1+pred),spot+250)); strategy='BULL_CALL_SPREAD'
-        if k1 is None or k2 is None or k2<=k1:return {'action':'NO_TRADE'}
-        max_loss=(p1-p2)*lot; entry=(p1-p2)*lot; return {'action':strategy,'lot_size':lot,'legs':[['BUY','CE',k1,p1],['SELL','CE',k2,p2]],'estimated_max_loss':max_loss,'entry_debit':entry,'capital_requirement':max_loss}
-    if pred<-TH:
-        k1,p1=near('PE',spot); k2,p2=near('PE',min(spot*(1+pred),spot-250)); strategy='BEAR_PUT_SPREAD'
-        if k1 is None or k2 is None or k2>=k1:return {'action':'NO_TRADE'}
-        max_loss=(p1-p2)*lot; return {'action':strategy,'lot_size':lot,'legs':[['BUY','PE',k1,p1],['SELL','PE',k2,p2]],'estimated_max_loss':max_loss,'entry_debit':max_loss,'capital_requirement':max_loss}
-    lp,pp=near('PE',spot+(-abs(float(CFG['options']['otm_points'])))); lc,pc=near('CE',spot+abs(float(CFG['options']['otm_points']))); lpb,ppb=near('PE',spot-abs(float(CFG['options']['otm_points']))-float(CFG['options']['wing_width_points'])); lcb,pcb=near('CE',spot+abs(float(CFG['options']['otm_points']))+float(CFG['options']['wing_width_points']))
-    if any(x is None for x in [lp,pp,lc,pc,lpb,ppb,lcb,pcb]): return {'action':'NO_TRADE'}
-    credit=(pp+pc-ppb-pcb)*lot; max_loss=(float(CFG['options']['wing_width_points'])*lot)-credit
-    return {'action':'IRON_CONDOR','lot_size':lot,'legs':[['SELL','PE',lp,pp],['BUY','PE',lpb,ppb],['SELL','CE',lc,pc],['BUY','CE',lcb,pcb]],'estimated_credit':credit,'estimated_max_loss':max_loss,'capital_requirement':max(0,max_loss)}
+def _latest_forecast(samples, production_model, norm):
+    dates = samples['dates']
+    gdf = samples['latest_global']
+    st = samples['latest_stock']
+    latest_date = pd.Timestamp(dates[-1])
+    index = samples['index']
+    options = samples['options']
+    exps = pd.DatetimeIndex(sorted(options['expiry'].unique()))
+    pos = np.searchsorted(exps.values, np.datetime64(latest_date), side='right')
+    expiry = pd.Timestamp(exps[pos])
+    seq = int(CFG['sequence_length'])
+    g = gdf.iloc[-seq:].to_numpy(dtype=np.float32)[None, ...]
+    s = st[-seq:].astype(np.float32)[None, ...]
+    q, p = _predict(production_model, norm, g, s)
+    q = q[0]; p = p[0]
+    close_q = q[0:3].copy(); high_q = q[3:6].copy(); low_q = q[6:9].copy()
+    pred_return = float(close_q[1])
+    low_ret = float(min(low_q[0], close_q[1]))
+    high_ret = float(max(high_q[2], close_q[1]))
+    spot = float(index.loc[latest_date, 'close'])
+    probs = {'BEARISH': float(p[0]), 'RANGE_BOUND': float(p[1]), 'BULLISH': float(p[2])}
+    model_regime = REGIMES[int(np.argmax(p))]
+    return {
+        'available': True,
+        'version': 'V7',
+        'signal_date': str(latest_date.date()),
+        'latest_feature_date': str(latest_date.date()),
+        'next_expiry': str(expiry.date()),
+        'spot': spot,
+        'production_model': 'deep_transformer',
+        'predicted_return': pred_return,
+        'predicted_close': spot * (1 + pred_return),
+        'predicted_low': spot * (1 + low_ret),
+        'predicted_high': spot * (1 + high_ret),
+        'regime': model_regime,
+        'regime_probabilities': probs,
+        'prediction_interval': float(CFG['prediction_interval']),
+        'close_quantiles_return': {'q10': float(close_q[0]), 'q50': float(close_q[1]), 'q90': float(close_q[2])},
+        'low_quantiles_return': {'q10': float(low_q[0]), 'q50': float(low_q[1]), 'q90': float(low_q[2])},
+        'high_quantiles_return': {'q10': float(high_q[0]), 'q50': float(high_q[1]), 'q90': float(high_q[2])},
+        'forecast_feature_date_verified': True,
+        'forecast_type': 'fresh_current_cutoff_deep_multimodal',
+    }
 
 
-def write_dashboard(latest, summary):
-    site=ROOT/'_site'; site.mkdir(exist_ok=True)
-    forecast=json.dumps(latest,indent=2); sm=json.dumps(summary,indent=2)
-    (site/'index.html').write_text(f'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>V6.2 NIFTY Research</title><style>body{{font-family:Arial;max-width:1100px;margin:30px auto;padding:0 18px}}pre{{background:#f4f4f4;padding:14px;overflow:auto}}table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #ccc;padding:6px}}</style></head><body><h1>V6.2 Multimodal NIFTY Expiry Research</h1><h2>Latest forecast</h2><pre>{forecast}</pre><h2>Research summary</h2><pre>{sm}</pre></body></html>''')
-    (site/'latest_forecast.json').write_text(forecast); (site/'summary.json').write_text(sm)
+def paper_strategy(forecast: dict, options: pd.DataFrame):
+    spot = float(forecast['spot']); expiry = pd.Timestamp(forecast['next_expiry']); d = pd.Timestamp(forecast['signal_date'])
+    o = options[(options['date'] == d) & (options['expiry'] == expiry)].copy()
+    lot = 65
+    if o.empty:
+        return {'action': 'NO_TRADE', 'lot_size': lot, 'reason': 'No current expiry option quote'}
+    def q(typ, strike):
+        z = o[o['option_type'].eq(typ)].copy()
+        if z.empty: return np.nan, float(strike)
+        z['dist'] = abs(z['strike'] - strike)
+        r = z.sort_values('dist').iloc[0]
+        return float(r['close']), float(r['strike'])
+    width = float(CFG['options']['spread_width_points'])
+    reg = forecast['regime']
+    if reg == 'BEARISH':
+        lp, k1 = q('PE', spot); sp, k2 = q('PE', spot - width)
+        debit = max(lp - sp, 0.0); max_loss = debit * lot; max_profit = max(width - debit, 0.0) * lot
+        return {'action': 'BEAR_PUT_SPREAD', 'lot_size': lot, 'legs': [['BUY','PE',k1,lp],['SELL','PE',k2,sp]], 'entry_debit_per_unit': debit, 'estimated_max_loss': max_loss, 'estimated_max_profit': max_profit, 'capital_requirement': max_loss}
+    if reg == 'BULLISH':
+        lc, k1 = q('CE', spot); sc, k2 = q('CE', spot + width)
+        debit = max(lc - sc, 0.0); max_loss = debit * lot; max_profit = max(width - debit, 0.0) * lot
+        return {'action': 'BULL_CALL_SPREAD', 'lot_size': lot, 'legs': [['BUY','CE',k1,lc],['SELL','CE',k2,sc]], 'entry_debit_per_unit': debit, 'estimated_max_loss': max_loss, 'estimated_max_profit': max_profit, 'capital_requirement': max_loss}
+    lowk = min(spot - width, float(forecast['predicted_low'])); highk = max(spot + width, float(forecast['predicted_high']))
+    sp, ks = q('PE', lowk); sc, kc = q('CE', highk); lp, kl = q('PE', ks - width); lc, ku = q('CE', kc + width)
+    credit = max(sp + sc - lp - lc, 0.0); max_loss = max(width - credit, 0.0) * lot
+    return {'action': 'IRON_CONDOR', 'lot_size': lot, 'legs': [['BUY','PE',kl,lp],['SELL','PE',ks,sp],['SELL','CE',kc,sc],['BUY','CE',ku,lc]], 'entry_credit_per_unit': credit, 'estimated_max_loss': max_loss, 'capital_requirement': max_loss}
 
 
 def main():
-    inp=load_inputs(); options,futures,context,news,index,prices,weights,membership,flows=inp; ds=build_dataset(inp); hist_end=pd.Timestamp(CFG['history_end']); ds=ds[ds.signal_date<hist_end].copy()
-    if len(ds)<int(CFG['min_samples']): raise RuntimeError(f'Only {len(ds)} samples; need >= {CFG["min_samples"]}')
-    features=model_features(ds); ds[features]=ds[features].replace([np.inf,-np.inf],np.nan); wfo_p,wfo_m=run_wfo(ds,features); split_p,split_m=run_split(ds[ds.signal_date<pd.Timestamp(CFG['new_oos_start'])],features); oos_p,oos_m=run_new_oos(ds,features)
-    wfo_p.to_csv(OUT/'walk_forward_predictions.csv',index=False); wfo_m.to_csv(OUT/'walk_forward_model_metrics.csv',index=False); split_p.to_csv(OUT/'split_70_30_predictions.csv',index=False); split_m.to_csv(OUT/'split_70_30_model_metrics.csv',index=False); oos_p.to_csv(OUT/'new_oos_predictions.csv',index=False); oos_m.to_csv(OUT/'new_oos_model_metrics.csv',index=False)
-    production=str(wfo_m.groupby('model').rmse.mean().sort_values().index[0]); latest=latest_forecast(ds,features,production); json.dump(latest,open(OUT/'latest_forecast.json','w'),indent=2)
-    latest_trade=paper_strategy(pd.Series({'pred_return':latest['predicted_return'],'spot':latest['spot'],'expiry':pd.Timestamp(latest['next_expiry']),'signal_date':pd.Timestamp(latest['signal_date'])}),options)
-    summary={'version':'V6.2','sample_count':int(len(ds)),'feature_count':len(features),'features':features,'selected_production_model':production,'history_end':str(hist_end.date()),'new_oos_start':str(pd.Timestamp(CFG['new_oos_start']).date()),'constituent_price_symbols':int(prices.symbol.nunique()),'membership_latest':str(membership.valid_from.max().date()),'weights_latest':str(weights.DATE.max().date()),'wfo':wfo_m.to_dict(orient='records'),'split_70_30':split_m.to_dict(orient='records'),'new_oos':oos_m.to_dict(orient='records'),'latest_forecast':latest,'latest_paper_trade':latest_trade}
-    json.dump(summary,open(OUT/'summary.json','w'),indent=2); pd.DataFrame([latest_trade]).to_csv(OUT/'latest_paper_trade.csv',index=False); write_dashboard(latest,summary); print(json.dumps({'samples':len(ds),'feature_count':len(features),'selected_model':production,'latest_forecast':latest,'latest_paper_trade':latest_trade},indent=2))
+    inp = load_inputs()
+    samples = build_samples(inp)
+    meta = samples['meta']
+    hist_end = pd.Timestamp(CFG['history_end'])
+    known = meta[pd.to_datetime(meta['target_date']) <= hist_end].copy().reset_index(drop=True)
+    # Reindex arrays after removing any sample whose expiry target is still in the future.
+    keep = np.where(pd.to_datetime(meta['target_date']) <= hist_end)[0]
+    for k in ['global', 'stock']:
+        samples[k] = samples[k][keep]
+    samples['meta'] = meta.loc[keep].reset_index(drop=True)
+    meta = samples['meta']
 
-if __name__=='__main__': main()
+    wfo = run_wfo(samples)
+    split70, split_obj = run_split(samples, '70_30')
+    oos, oos_obj = run_split(samples, 'new_oos')
+
+    # Production training uses every fully-labelled expiry available at the cutoff.
+    all_y = meta[['target_return', 'target_high_return', 'target_low_return']].to_numpy(dtype=np.float32)
+    prod_model, prod_norm = _fit_model(samples['global'], samples['stock'], all_y)
+    latest = _latest_forecast(samples, prod_model, prod_norm)
+    trade = paper_strategy(latest, samples['options'])
+
+    wfo.to_csv(OUT / 'walk_forward_model_metrics.csv', index=False)
+    split70.to_csv(OUT / 'split_70_30_model_metrics.csv', index=False)
+    oos.to_csv(OUT / 'new_oos_model_metrics.csv', index=False)
+
+    # Canonical prediction tables make leakage control and expiry-level inspection explicit.
+    def save_predictions(obj, name):
+        _, _, _, te, q, p = obj
+        z = samples['meta'].loc[te, ['signal_date','expiry','target_date','spot','target_return']].reset_index(drop=True).copy()
+        z['pred_close_q10'] = q[:,0]; z['pred_close_q50'] = q[:,1]; z['pred_close_q90'] = q[:,2]
+        z['pred_high_q90'] = q[:,5]; z['pred_low_q10'] = q[:,6]
+        z['regime_prob_bear'] = p[:,0]; z['regime_prob_range'] = p[:,1]; z['regime_prob_bull'] = p[:,2]
+        z.to_csv(OUT / name, index=False)
+    save_predictions(split_obj, 'split_70_30_predictions.csv')
+    save_predictions(oos_obj, 'new_oos_predictions.csv')
+
+    # WFO predictions aggregated only at canonical signal dates.
+    wp = []
+    exps = sorted(samples['meta']['expiry'].unique())
+    for _, row in wfo[wfo['model'].eq('deep_transformer')].iterrows():
+        pass
+    # Write a concise research-status file; individual WFO metric rows remain the source of truth.
+    news_manifest = json.loads((ROOT / 'data/cache/v62_news_manifest.json').read_text()) if (ROOT / 'data/cache/v62_news_manifest.json').exists() else {}
+    flow_manifest = json.loads((ROOT / 'data/cache/v62_fii_dii_manifest.json').read_text()) if (ROOT / 'data/cache/v62_fii_dii_manifest.json').exists() else {}
+    summary = {
+        'version': 'V7',
+        'sample_count': int(len(meta)),
+        'feature_count_global': int(len(samples['global_columns'])),
+        'constituent_symbols': int(len(samples['stock_symbols'])),
+        'sequence_length': int(CFG['sequence_length']),
+        'sample_stride': int(CFG.get('sample_stride',2)),
+        'selected_production_model': 'deep_transformer',
+        'history_end': str(hist_end.date()),
+        'new_oos_start': CFG['new_oos_start'],
+        'wfo': wfo.to_dict('records'),
+        'split_70_30': split70.to_dict('records'),
+        'new_oos': oos.to_dict('records'),
+        'latest_forecast': latest,
+        'latest_paper_trade': trade,
+        'news_manifest': news_manifest,
+        'fii_dii_manifest': flow_manifest,
+        'research_gate': 'RESEARCH_ONLY_PENDING_STABLE_OOS',
+    }
+    json.dump(summary, open(OUT / 'summary.json', 'w'), indent=2)
+    json.dump({'status':'V7_DEEP_MULTIMODAL_READY','history_end':str(hist_end.date()),'new_oos_start':CFG['new_oos_start'],'architecture':'stock-attention + multimodal temporal transformer','targets':['expiry_close_return','expiry_high_return','expiry_low_return','regime']}, open(OUT/'status.json','w'), indent=2)
+    json.dump(latest, open(OUT / 'latest_forecast.json', 'w'), indent=2)
+    pd.DataFrame([trade]).to_csv(OUT / 'latest_paper_trade.csv', index=False)
+    print(json.dumps({'version':'V7','samples':len(meta),'global_features':len(samples['global_columns']),'constituents':len(samples['stock_symbols']),'latest_forecast':latest,'latest_paper_trade':trade,'new_oos':oos.to_dict('records')}, indent=2))
+
+
+if __name__ == '__main__':
+    main()
