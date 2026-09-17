@@ -48,7 +48,10 @@ assert "side='right'" in source
 assert 'canonical' in source
 assert 'active_mask' in source and 'weights_max_staleness_days' in source
 assert 'stock_tensor' in source and 'stock_symbols' in source
-assert 'm_bin' in source and 'opt_ce_oi_' in source and 'opt_pe_oi_' in source
+# Option surface emits opt_{ce|pe}_{op|vo}_{moneyness}; verify the actual
+# feature-generation pattern rather than an incorrect hard-coded suffix.
+assert "rows[f'opt_{typ.lower()}_{stat[:2]}_{b:+d}']" in source
+assert 'opt_pcr_oi' in source and 'opt_pcr_volume' in source
 assert '.pct_change()' not in source.replace('.pct_change(fill_method=None)', '')
 
 flow = FLOW_DOWNLOADER.read_text()
