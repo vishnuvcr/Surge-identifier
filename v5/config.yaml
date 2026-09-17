@@ -11,21 +11,24 @@ gst_pct: 0.18
 selection_dte_min: 14
 selection_dte_max: 35
 holding_days: 5
-strike_step_points: 50
-wing_width_points: 200
 spread_width_points: 100
+wing_width_points: 200
 otm_points: 100
 risk_per_trade_pct: 0.10
-max_lots: 10
+max_lots: 1
+max_trade_risk_pct: 0.25
 min_training_samples: 150
+min_regime_samples: 20
 rolling_train_years: 3
 no_trade_threshold: 0.002
 min_predicted_edge_vs_second: 0.0005
 model:
-  n_estimators: 250
+  n_estimators: 300
   max_depth: 7
-  min_samples_leaf: 8
+  min_samples_leaf: 10
   random_state: 42
+regime_blend_weight: 0.30
+context_lag_sessions: 1
 walk_forward:
   - train_end: '2020-12-31'
     test_start: '2021-01-01'
