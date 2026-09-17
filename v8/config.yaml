@@ -1,0 +1,57 @@
+version: V8
+history_end: '2026-09-16'
+new_oos_start: '2026-04-01'
+purge_days: 7
+embargo_days: 2
+sequence_length: 20
+sample_stride: 1
+seed: 42
+min_train_samples: 500
+min_ic_reward_risk: 1.5
+max_ic_reward_risk: 6.0
+min_profit_probability: 0.65
+max_touch_probability: 0.35
+max_expected_loss_probability: 0.25
+lot_size: 65
+wing_width_points: [100, 150, 200, 250, 300, 400, 500]
+short_put_moneyness_points: [100, 150, 200, 250, 300, 400, 500, 600, 700]
+short_call_moneyness_points: [100, 150, 200, 250, 300, 400, 500, 600, 700]
+
+model:
+  d_model: 96
+  stock_embed_dim: 64
+  heads: 4
+  layers: 2
+  dropout: 0.15
+  batch_size: 64
+  epochs: 20
+  patience: 5
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  gradient_clip: 1.0
+  quantiles: [0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95]
+
+walk_forward:
+  windows: 6
+  train_expiries: 36
+  test_expiries: 6
+
+costs:
+  brokerage_per_order: 20.0
+  exchange_txn_pct: 0.0003503
+  sebi_turnover_pct: 0.000001
+  gst_pct: 0.18
+  stamp_buy_pct: 0.00003
+  stt_sell_pct_pre_2026_04_01: 0.001
+  stt_sell_pct_from_2026_04_01: 0.0015
+  slippage_points_per_leg: 1.0
+
+features:
+  use_index: true
+  use_constituents: true
+  use_pit_weights: true
+  use_options_surface: true
+  use_futures: true
+  use_cross_asset: true
+  use_fii_dii: true
+  use_news: true
