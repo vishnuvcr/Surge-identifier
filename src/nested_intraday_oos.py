@@ -68,7 +68,7 @@ def _max_consecutive(flags):
 def _capital_metrics(trades, initial_capital, cost_bps_side, slippage_bps_side, risk_fraction, max_position_fraction):
     capital = float(initial_capital); peak = capital; rows = []
     for _, t in trades.iterrows():
-        stop = float(t.stop_return); gross = float(t.return)
+        stop = float(t.stop_return); gross = float(t['return'])
         position_fraction = min(max_position_fraction, risk_fraction / max(stop, 1e-9))
         notional = capital * position_fraction
         round_trip_cost = 2.0 * (cost_bps_side + slippage_bps_side) / 10000.0
