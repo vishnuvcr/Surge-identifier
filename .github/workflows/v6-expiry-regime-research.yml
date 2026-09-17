@@ -43,9 +43,12 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Independent V6 inspector
+        run: python v6/inspector.py
+
       - name: Preflight
         run: |
-          python -m py_compile v6/expiry_regime_engine.py
+          python -m py_compile v6/expiry_regime_engine.py v6/inspector.py
           python - <<'PY'
           import yaml
           cfg=yaml.safe_load(open('v6/config.yaml'))
@@ -112,12 +115,12 @@ jobs:
           s=json.load(open('v6/research/summary.json'))
           assert s['sample_count'] >= 100
           assert len(s['strategies']) >= 30
-          assert set(['BULLISH','BEARISH','RANGE_BOUND']).issubset(set(str(x) for x in pd.read_csv('v6/research/walk_forward_predictions.csv')['pred_regime'].dropna().unique()) | set(['BULLISH','BEARISH','RANGE_BOUND']))
+          assert set(s['strategies']) == set(pd.read_csv('v6/research/all_strategy_outcomes_pre_oos.csv')['strategy'].dropna().unique())
           o=pd.read_csv('v6/research/new_oos_predictions.csv')
           assert len(o) > 0
-          assert (pd.to_datetime(o['entry_date']) >= pd.Timestamp('2026-04-01')).any()
-          for name in ['walk_forward_selected_trades','split_70_30_selected_trades','new_oos_selected_trades']:
-              pd.read_csv('v6/research/'+name+'.csv')
+          assert (pd.to_datetime(o['entry_date']) >= pd.Timestamp('2026-04-01')).all()
+          assert {'pred_close','pred_low','pred_high','pred_regime'}.issubset(o.columns)
+          assert {'BULLISH','BEARISH','RANGE_BOUND'}.issubset(set(s['new_oos']['mapping'].keys()))
           print(json.dumps({'samples':s['sample_count'],'strategies':len(s['strategies']),'wfo':s['walk_forward_selected_summary'],'70_30':s['70_30']['selected_summary'],'new_oos':s['new_oos']['selected_summary']},indent=2))
           PY
 
