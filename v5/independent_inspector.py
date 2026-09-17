@@ -94,7 +94,7 @@ def main() -> int:
         fail('safe runner may swallow non-payoff RuntimeErrors', failures)
 
     # Learned failure: external Yahoo symbol names must not silently become missing ML features.
-    raw_symbol_mismatch = ("c.get('INR=X_ret5'" in base_text) or ("c.get('BZ=F_ret5'" in base_text))
+    raw_symbol_mismatch = "c.get('INR=X_ret5'" in base_text or "c.get('BZ=F_ret5'" in base_text
     if raw_symbol_mismatch:
         if 'usd_inr_ret5' not in safe_text or 'brent_ret5' not in safe_text:
             fail('legacy Yahoo-symbol lookups have no safe context-key repair', failures)
