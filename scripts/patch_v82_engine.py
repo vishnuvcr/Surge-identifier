@@ -14,7 +14,12 @@ def replace_block(src, start_pat, end_pat, replacement):
 def patch_engine():
     s = ENGINE.read_text()
     model = '''class ICTransformer(nn.Module):
-    """Joint coherent quantile head with stable positive increments."""
+    """Joint coherent quantile head with a shared range anchor.
+
+    One shared low-end anchor is followed by positive increments.  This
+    structurally guarantees low(q) <= close(q) <= high(q) and monotonicity
+    across the configured quantiles.
+    """
     def __init__(self, n_features):
         super().__init__()
         c = CFG['model']; d = int(c['d_model'])
@@ -30,13 +35,13 @@ def patch_engine():
     def forward(self, x):
         h = self.norm(self.enc(self.inp(x))[:, -1])
         raw = self.head(h).view(-1, 3, len(Q))
-        # Separate location anchors and positive increments. Softplus is
-        # shifted so initial increments are small rather than ~0.7 return units.
-        anchor = raw[:, :, :1]
-        inc = torch.nn.functional.softplus(raw[:, :, 1:]) * 0.02 + 1e-5
-        low = anchor[:, 0] + torch.cat([torch.zeros_like(inc[:, 0, :1]), torch.cumsum(inc[:, 0], dim=-1)], dim=-1)
-        close = low[:, :1] + torch.cat([torch.zeros_like(inc[:, 1, :1]), torch.cumsum(inc[:, 1], dim=-1)], dim=-1)
-        high = close[:, :1] + torch.cat([torch.zeros_like(inc[:, 2, :1]), torch.cumsum(inc[:, 2], dim=-1)], dim=-1)
+        anchor = raw[:, 0, :1]
+        low_inc = torch.nn.functional.softplus(raw[:, 0, 1:]) * 0.02 + 1e-5
+        close_gap = torch.nn.functional.softplus(raw[:, 1, :]) * 0.02 + 1e-5
+        high_gap = torch.nn.functional.softplus(raw[:, 2, :]) * 0.02 + 1e-5
+        low = anchor + torch.cat([torch.zeros_like(low_inc[:, :1]), torch.cumsum(low_inc, dim=-1)], dim=-1)
+        close = low + torch.cumsum(close_gap, dim=-1)
+        high = close + torch.cumsum(high_gap, dim=-1)
         return torch.stack([low, close, high], dim=1)
 '''
     s = replace_block(s, r'^class ICTransformer\(nn\.Module\):', r'^def pinball\(', model)
@@ -78,8 +83,6 @@ def patch_engine():
     xm, xs = norm; Xn = np.clip((X - xm) / xs, -8, 8).astype(np.float32); model.eval()
     with torch.no_grad(): raw = model(torch.from_numpy(Xn)).numpy()
     if not np.isfinite(raw).all(): raise RuntimeError('V8.2 non-finite prediction')
-    # Hard numerical repair is intentionally forbidden: this verifies the
-    # architecture rather than hiding an incoherent model output.
     dq = np.diff(raw, axis=2)
     cross = max(float(np.max(raw[:,0] - raw[:,1])), float(np.max(raw[:,1] - raw[:,2])))
     if np.any(dq < -1e-6): raise RuntimeError(f'V8.2 quantile monotonicity invariant failed: min_dq={float(dq.min())}')
