@@ -1,4 +1,4 @@
-"""Safe V5.1 runner: isolates malformed historical quotes and repairs known context-key drift."""
+"""Safe V5.1 runner: isolates bad quotes and enforces historical feature integrity."""
 from __future__ import annotations
 
 import json
@@ -10,9 +10,22 @@ CONTEXT_REPAIR_COUNT = 0
 _original_outcome = base.outcome
 _original_make_features = base.make_features
 
+# The current public FII/DII feed does not provide sufficient point-in-time history
+# for the 2017-2025 training windows. Do not allow all-NaN features to enter the
+# imputer/model. These features are explicitly disabled until a validated
+# historical source is restored.
+HISTORICAL_UNSUPPORTED_FEATURES = {
+    "fii_net_z",
+    "dii_net_z",
+    "fii_fut_long_short",
+    "pcr",
+    "flow_sentiment",
+}
+base.FEATURES = [f for f in base.FEATURES if f not in HISTORICAL_UNSUPPORTED_FEATURES]
+
 
 def safe_make_features(m, d):
-    """Repair legacy Yahoo-symbol lookups while preserving point-in-time context."""
+    """Repair legacy Yahoo-symbol lookups using point-in-time internal keys."""
     global CONTEXT_REPAIR_COUNT
     f = _original_make_features(m, d)
     if f is None:
@@ -58,17 +71,23 @@ if summary_path.exists():
     summary["payoff_invariant_skips"] = {
         "count": VIOLATION_COUNT,
         "examples": VIOLATION_EXAMPLES,
-        "policy": "Malformed/inconsistent historical option quotes are excluded from the candidate dataset; the research run continues. Non-payoff exceptions still abort the run."
+        "policy": "Malformed/inconsistent historical option quotes are excluded from the candidate dataset; non-payoff exceptions still abort the run."
     }
     summary["context_key_repairs"] = {
         "count": CONTEXT_REPAIR_COUNT,
-        "policy": "Legacy raw Yahoo-symbol feature lookups are repaired from the point-in-time internal context keys before model features are consumed."
+        "policy": "Legacy raw Yahoo-symbol feature lookups are repaired from point-in-time internal context keys."
+    }
+    summary["historical_feature_integrity"] = {
+        "disabled_features": sorted(HISTORICAL_UNSUPPORTED_FEATURES),
+        "reason": "The current FII/DII/PCR feed lacks sufficient point-in-time history for the 2017-2025 training windows; all-NaN features are therefore excluded rather than imputed.",
+        "policy": "Re-enable only after a validated historical source covers the required training windows."
     }
     summary["validation"] = [
         "Exactly one lot per trade.",
         "Defined-risk payoffs are checked analytically before a trade enters the dataset.",
         "Historical quote/payoff invariant failures are excluded rather than aborting the full research run.",
         "Known context-key drift is repaired from point-in-time internal keys.",
+        "Unsupported all-NaN historical flow features are excluded from model training.",
         "Context/news values are lagged by at least one session.",
         "No overlapping positions."
     ]
