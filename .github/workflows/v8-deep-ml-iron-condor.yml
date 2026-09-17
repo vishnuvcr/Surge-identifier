@@ -43,14 +43,12 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Apply robust V8.1 datetime merge hotfix
-        run: python scripts/patch_v81_engine.py
       - name: Apply V8.2 joint range patch
         run: python scripts/patch_v82_engine.py
       - name: Inspect V8.2
         run: python v8/inspector.py
       - name: Compile V8.2
-        run: python -m py_compile v8/inspector.py v8/deep_iron_condor_engine.py scripts/patch_v81_engine.py scripts/patch_v82_engine.py
+        run: python -m py_compile v8/inspector.py v8/deep_iron_condor_engine.py scripts/patch_v82_engine.py
       - name: Download NIFTY options and futures history
         run: python scripts/download_nifty_nse_history.py
       - name: Download market context
