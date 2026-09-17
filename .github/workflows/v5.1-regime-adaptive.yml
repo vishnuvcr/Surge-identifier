@@ -10,6 +10,7 @@ on:
       - 'scripts/download_v5_flow_context.py'
       - 'scripts/download_nifty_nse_history.py'
       - '.github/workflows/v5.1-regime-adaptive.yml'
+      - '.github/workflows/v5.1-independent-inspector.yml'
 
 permissions:
   contents: write
@@ -19,7 +20,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  inspector:
+    name: Independent V5.1 Inspector
+    uses: ./.github/workflows/v5.1-independent-inspector.yml
+
   backtest:
+    needs: inspector
     runs-on: ubuntu-latest
     timeout-minutes: 360
     env:
@@ -113,6 +119,7 @@ jobs:
           t=pd.read_csv('v5/research/oos_trade_ledger.csv')
           print(json.dumps(s['overall_oos'], indent=2))
           print('payoff invariant skips:', s.get('payoff_invariant_skips', {}).get('count', 0))
+          print('context key repairs:', s.get('context_key_repairs', {}).get('count', 0))
           assert s['max_lots_per_trade']==1
           if len(t):
               assert (t['lots']==1).all()
