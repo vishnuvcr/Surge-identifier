@@ -43,10 +43,12 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: pip install -r requirements.txt
+      - name: Apply robust V8.1 datetime merge hotfix
+        run: python scripts/patch_v81_engine.py
       - name: Inspect V8.1
         run: python v8/inspector.py
       - name: Compile V8.1
-        run: python -m py_compile v8/inspector.py v8/deep_iron_condor_engine.py
+        run: python -m py_compile v8/inspector.py v8/deep_iron_condor_engine.py scripts/patch_v81_engine.py
       - name: Download NIFTY options and futures history
         run: python scripts/download_nifty_nse_history.py
       - name: Download market context
@@ -94,7 +96,7 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add v8/research
+          git add v8/research v8/deep_iron_condor_engine.py
           git diff --cached --quiet || git commit -m 'Publish V8.1 coherent iron condor research results [skip ci]'
           git pull --rebase origin v8.1-coherent-ic-wfo
           git push origin v8.1-coherent-ic-wfo
