@@ -1,10 +1,10 @@
-name: V6.2 Multimodal NIFTY Expiry Research
+name: V7 Deep Multimodal NIFTY Expiry Research
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - v6.2-multimodal-nifty-expiry
+      - v7-deep-multimodal-expiry
     paths:
       - 'v6.2/**'
       - '.github/workflows/v6.2-multimodal-nifty-expiry.yml'
@@ -13,7 +13,7 @@ on:
       - 'requirements.txt'
 
 concurrency:
-  group: v6.2-multimodal-nifty-expiry
+  group: v7-deep-multimodal-expiry
   cancel-in-progress: true
 
 permissions:
@@ -30,12 +30,11 @@ jobs:
       NSE_HISTORY_END: '2026-09-16'
       NSE_HISTORY_WORKERS: '5'
       V62_PRICE_WORKERS: '8'
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: v6.2-multimodal-nifty-expiry
+          ref: v7-deep-multimodal-expiry
           fetch-depth: 1
 
       - name: Setup Python
@@ -47,11 +46,11 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Inspect V6.2 implementation
-        run: python v6.2/inspector.py
+      - name: Inspect V7 implementation
+        run: python v6.2/v7_inspector.py
 
-      - name: Compile V6.2 implementation
-        run: python -m py_compile v6.2/download_multimodal_data.py v6.2/multimodal_engine.py v6.2/correct_latest_forecast.py v6.2/run_multimodal_safe.py v6.2/download_fii_dii_kaggle.py v6.2/download_news_robust.py
+      - name: Compile V7 implementation
+        run: python -m py_compile v6.2/v7_inspector.py v6.2/multimodal_engine.py v6.2/v7_latest_forecast.py v6.2/download_multimodal_data.py v6.2/download_fii_dii_kaggle.py v6.2/download_news_robust.py
 
       - name: Download NIFTY options and futures history
         run: python scripts/download_nifty_nse_history.py
@@ -77,91 +76,47 @@ jobs:
       - name: Validate raw inputs
         run: |
           set -e
-          test -s data/cache/nifty_options_long.parquet
-          test -s data/cache/nifty_futures_long.parquet
-          test -s data/cache/v5_market_context.parquet
-          test -s data/cache/v5_news_daily.csv
-          test -s data/cache/v62_news_manifest.json
-          test -s data/cache/v62_nifty50_index.parquet
-          test -s data/cache/v62_constituent_prices.parquet
-          test -s data/cache/v62_constituent_weights.csv
-          test -s data/cache/v62_nifty50_membership.csv
-          test -s data/cache/v62_fii_dii.parquet
-          test -s data/cache/v62_fii_dii_manifest.json
+          for f in data/cache/nifty_options_long.parquet data/cache/nifty_futures_long.parquet data/cache/v5_market_context.parquet data/cache/v5_news_daily.csv data/cache/v62_news_manifest.json data/cache/v62_nifty50_index.parquet data/cache/v62_constituent_prices.parquet data/cache/v62_constituent_weights.csv data/cache/v62_nifty50_membership.csv data/cache/v62_fii_dii.parquet data/cache/v62_fii_dii_manifest.json; do test -s "$f" || { echo "missing $f"; exit 1; }; done
 
-      - name: Run V6.2 multimodal research
-        run: python v6.2/run_multimodal_safe.py
+      - name: Run V7 deep multimodal research
+        run: python v6.2/multimodal_engine.py
 
-      - name: Recompute latest forecast from fresh current-cutoff features
-        run: python v6.2/correct_latest_forecast.py
+      - name: Verify latest V7 forecast
+        run: python v6.2/v7_latest_forecast.py
 
-      - name: Validate V6.2 research outputs
+      - name: Validate V7 research outputs
         run: |
           python - <<'PY'
-          import json, pandas as pd
+          import json
+          import pandas as pd
           from pathlib import Path
           root=Path('v6.2/research')
-          for p in ['summary.json','latest_forecast.json','walk_forward_predictions.csv','walk_forward_model_metrics.csv','split_70_30_predictions.csv','split_70_30_model_metrics.csv','new_oos_predictions.csv','new_oos_model_metrics.csv','latest_paper_trade.csv']:
+          required=['summary.json','status.json','latest_forecast.json','latest_paper_trade.csv','walk_forward_model_metrics.csv','split_70_30_model_metrics.csv','split_70_30_predictions.csv','new_oos_model_metrics.csv','new_oos_predictions.csv']
+          for p in required:
               assert (root/p).exists() and (root/p).stat().st_size>0, p
-          s=json.load(open(root/'summary.json')); latest=json.load(open(root/'latest_forecast.json'))
-          flow=json.load(open('data/cache/v62_fii_dii_manifest.json'))
-          news=json.load(open('data/cache/v62_news_manifest.json'))
-          assert s['sample_count'] >= 180, s['sample_count']
-          assert s['feature_count'] >= 40, s['feature_count']
+          s=json.load(open(root/'summary.json')); f=json.load(open(root/'latest_forecast.json'))
+          flow=json.load(open('data/cache/v62_fii_dii_manifest.json')); news=json.load(open('data/cache/v62_news_manifest.json'))
+          assert s['version']=='V7'
+          assert s['sample_count'] >= 300, s['sample_count']
+          assert s['feature_count_global'] >= 20, s['feature_count_global']
+          assert s['constituent_symbols'] >= 40, s['constituent_symbols']
           assert s['history_end']=='2026-09-16'
           assert s['new_oos_start']=='2026-04-01'
-          assert flow['rows'] >= 100, flow
-          assert news['rows'] >= 100, news
-          assert latest['available'] is True
-          assert latest['forecast_feature_date_verified'] is True
-          assert latest['signal_date'] == latest['latest_feature_date']
-          assert latest['next_expiry'] > '2026-09-16'
+          assert s['selected_production_model']=='deep_transformer'
+          assert f['available'] is True and f['forecast_feature_date_verified'] is True
+          assert f['signal_date']==f['latest_feature_date']
+          assert pd.Timestamp(f['next_expiry']) > pd.Timestamp('2026-09-16')
           o=pd.read_csv(root/'new_oos_predictions.csv')
           assert len(o)>0
           assert (pd.to_datetime(o['expiry']) <= pd.Timestamp('2026-09-16')).all()
-          print(json.dumps({'samples':s['sample_count'],'features':s['feature_count'],'selected_model':s['selected_production_model'],'latest_forecast':latest,'fii_dii':flow,'news':news,'new_oos_metrics':s['new_oos']},indent=2))
+          print(json.dumps({'samples':s['sample_count'],'global_features':s['feature_count_global'],'constituents':s['constituent_symbols'],'latest_forecast':f,'fii_dii':flow,'news':news,'new_oos':s['new_oos']},indent=2))
           PY
 
-      - name: Commit V6.2 research results
+      - name: Commit V7 research results
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add v6.2/research
-          git diff --cached --quiet || git commit -m 'Publish V6.2 multimodal NIFTY research results [skip ci]'
-          git pull --rebase origin v6.2-multimodal-nifty-expiry
-          git push origin v6.2-multimodal-nifty-expiry
-
-      - name: Prepare Pages site
-        run: |
-          mkdir -p _site
-          cp v6.2/research/latest_forecast.json _site/latest_forecast.json
-          cp v6.2/research/summary.json _site/summary.json
-          cp v6.2/research/latest_paper_trade.csv _site/latest_paper_trade.csv
-          cp v6.2/README.md _site/specification.md
-          cp v6.2/research_plan.md _site/research_plan.md
-          python - <<'PY'
-          import json, html
-          s=json.load(open('v6.2/research/summary.json')); f=json.load(open('v6.2/research/latest_forecast.json'))
-          rows=''.join(f"<tr><td>{html.escape(str(r['model']))}</td><td>{r['rmse']:.5f}</td><td>{r['mae']:.5f}</td><td>{r['direction_accuracy']:.3f}</td><td>{r['regime_accuracy']:.3f}</td><td>{r['samples']}</td></tr>" for r in s['new_oos'])
-          page=f'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>V6.2 NIFTY Research</title><style>body{{font-family:Arial;max-width:1100px;margin:30px auto;padding:0 18px}}table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #ccc;padding:7px}}pre{{background:#f4f4f4;padding:14px;overflow:auto}}</style></head><body><h1>V6.2 Multimodal NIFTY Expiry Research</h1><h2>Latest forecast</h2><pre>{html.escape(json.dumps(f,indent=2))}</pre><h2>New OOS model metrics</h2><table><tr><th>Model</th><th>RMSE</th><th>MAE</th><th>Direction</th><th>Regime</th><th>N</th></tr>{rows}</table><p><a href="summary.json">Summary JSON</a> · <a href="latest_forecast.json">Latest forecast</a> · <a href="latest_paper_trade.csv">Latest paper trade</a></p></body></html>'''
-          open('_site/index.html','w').write(page)
-          PY
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
-
-  pages:
-    needs: research
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          git diff --cached --quiet || git commit -m 'Publish V7 deep multimodal NIFTY research results [skip ci]'
+          git pull --rebase origin v7-deep-multimodal-expiry
+          git push origin v7-deep-multimodal-expiry
