@@ -1,0 +1,96 @@
+name: V5 Adaptive Multi-Strategy Options Research
+
+on:
+  push:
+    branches: [adaptive-multistrategy-v5]
+    paths:
+      - 'v5/**'
+      - 'scripts/download_nifty_nse_history.py'
+      - 'requirements.txt'
+      - '.github/workflows/adaptive-multistrategy-v5.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: adaptive-multistrategy-v5
+  cancel-in-progress: false
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      PYTHONUNBUFFERED: '1'
+      NSE_HISTORY_START: '2015-01-01'
+      NSE_HISTORY_END: '2026-09-16'
+      NSE_HISTORY_WORKERS: '5'
+    steps:
+      - name: Checkout V5 branch
+        uses: actions/checkout@v4
+        with:
+          ref: adaptive-multistrategy-v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Preflight V5
+        run: python -m py_compile v5/run.py
+
+      - name: Download / refresh complete NIFTY history
+        run: python scripts/download_nifty_nse_history.py
+
+      - name: Validate synchronized history
+        run: |
+          test -s data/cache/nifty_options_long.parquet
+          test -s data/cache/nifty_futures_long.parquet
+          python - <<'PY'
+          import pandas as pd
+          o = pd.read_parquet('data/cache/nifty_options_long.parquet', columns=['date','expiry','option_type','close','strike'])
+          f = pd.read_parquet('data/cache/nifty_futures_long.parquet', columns=['date','expiry','close'])
+          print('options', len(o), o.date.min(), o.date.max(), o.date.nunique())
+          print('futures', len(f), f.date.min(), f.date.max(), f.date.nunique())
+          assert o.date.min().year <= 2015 and o.date.max().year >= 2026
+          assert f.date.min().year <= 2015 and f.date.max().year >= 2026
+          assert set(o.option_type.astype(str).str.upper().unique()) == {'CE','PE'}
+          PY
+
+      - name: Run V5 selector research
+        run: python v5/run.py
+
+      - name: Validate V5 outputs
+        run: |
+          test -s v5/research/summary.json
+          test -s v5/research/oos_trade_ledger.csv
+          test -s v5/research/walk_forward_summary.json
+          test -s v5/research/candidate_dataset.parquet
+          python - <<'PY'
+          import json
+          s=json.load(open('v5/research/summary.json'))
+          print(json.dumps(s['overall_oos'], indent=2))
+          assert len(s['walk_forward']) == 6
+          assert s['overall_oos']['trades'] >= 0
+          PY
+
+      - name: Commit V5 research results
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add v5/research
+          git diff --cached --quiet || git commit -m 'Publish V5 adaptive multi-strategy research results'
+          git pull --rebase origin adaptive-multistrategy-v5
+          git push origin adaptive-multistrategy-v5
+
+      - name: Upload V5 research artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: adaptive-multistrategy-v5-research
+          path: v5/research/
+          if-no-files-found: error
