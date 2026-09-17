@@ -5,6 +5,7 @@ on:
     branches: [adaptive-multistrategy-v5]
     paths:
       - 'v5/**'
+      - '!v5/research/**'
       - 'scripts/download_nifty_nse_history.py'
       - 'requirements.txt'
       - '.github/workflows/adaptive-multistrategy-v5.yml'
