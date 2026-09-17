@@ -1,4 +1,4 @@
-version: V8
+version: V8.1
 history_end: '2026-09-16'
 new_oos_start: '2026-04-01'
 purge_days: 7
@@ -13,29 +13,30 @@ min_profit_probability: 0.65
 max_touch_probability: 0.35
 max_expected_loss_probability: 0.25
 lot_size: 65
-wing_width_points: [100, 150, 200, 250, 300, 400, 500]
-short_put_moneyness_points: [100, 150, 200, 250, 300, 400, 500, 600, 700]
-short_call_moneyness_points: [100, 150, 200, 250, 300, 400, 500, 600, 700]
-
-model:
-  d_model: 96
-  stock_embed_dim: 64
-  heads: 4
-  layers: 2
-  dropout: 0.15
-  batch_size: 64
-  epochs: 20
-  patience: 5
-  learning_rate: 0.001
-  weight_decay: 0.0001
-  gradient_clip: 1.0
-  quantiles: [0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95]
-
+entry:
+  days_before_expiry: 7
 walk_forward:
   windows: 6
   train_expiries: 36
   test_expiries: 6
-
+model:
+  d_model: 64
+  heads: 4
+  layers: 2
+  dropout: 0.15
+  batch_size: 64
+  epochs: 12
+  patience: 3
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  gradient_clip: 1.0
+  quantiles: [0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95]
+wing_width_points: [100, 150, 200, 250, 300, 400, 500]
+short_put_moneyness_points: [100, 150, 200, 250, 300, 400, 500, 600, 700]
+short_call_moneyness_points: [100, 150, 200, 250, 300, 400, 500, 600, 700]
+freshness:
+  flow_max_age_days: 10
+  news_max_age_days: 10
 costs:
   brokerage_per_order: 20.0
   exchange_txn_pct: 0.0003503
@@ -45,7 +46,8 @@ costs:
   stt_sell_pct_pre_2026_04_01: 0.001
   stt_sell_pct_from_2026_04_01: 0.0015
   slippage_points_per_leg: 1.0
-
+gates:
+  minimum_oos_trades: 20
 features:
   use_index: true
   use_constituents: true
