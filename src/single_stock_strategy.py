@@ -1,15 +1,11 @@
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
-from typing import Iterable
 
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostingRegressor
 from sklearn.metrics import average_precision_score, mean_absolute_error, roc_auc_score
-from sklearn.preprocessing import StandardScaler
-
 
 FEATURES = [
     "gap", "ret1", "ret2", "ret3", "ret5", "ret10", "ret20",
@@ -24,10 +20,6 @@ FEATURES = [
 ]
 
 
-def _safe(a, b):
-    return a / b.replace(0, np.nan)
-
-
 def _rolling_z(s: pd.Series, n: int) -> pd.Series:
     m = s.rolling(n, min_periods=max(5, n // 2)).mean()
     sd = s.rolling(n, min_periods=max(5, n // 2)).std()
@@ -39,17 +31,16 @@ def _stock_features(df: pd.DataFrame) -> pd.DataFrame:
     c, o, h, l, pc = [x[k].astype(float) for k in ["close", "open", "high", "low", "prev_close"]]
     for n in [1, 2, 3, 5, 10, 20]:
         x[f"ret{n}"] = c.pct_change(n)
-    x["gap"] = o / pc - 1
+    x["gap"] = o / pc.replace(0, np.nan) - 1
     x["range_pct"] = (h - l) / pc.replace(0, np.nan)
     x["body_pct"] = (c - o) / pc.replace(0, np.nan)
     x["close_pos"] = (c - l) / (h - l).replace(0, np.nan)
-    tr = pd.concat([h-l, (h-pc).abs(), (l-pc).abs()], axis=1).max(axis=1)
+    tr = pd.concat([h - l, (h - pc).abs(), (l - pc).abs()], axis=1).max(axis=1)
     x["atr_pct"] = tr.rolling(14, min_periods=8).mean() / c.replace(0, np.nan)
     delta = c.diff()
     up = delta.clip(lower=0).rolling(14, min_periods=8).mean()
     down = (-delta.clip(upper=0)).rolling(14, min_periods=8).mean()
-    rs = up / down.replace(0, np.nan)
-    x["rsi14"] = 100 - 100 / (1 + rs)
+    x["rsi14"] = 100 - 100 / (1 + up / down.replace(0, np.nan))
     x["vol_z20"] = _rolling_z(x["volume"].astype(float), 20)
     x["relvol5"] = x["volume"] / x["volume"].rolling(5, min_periods=3).mean()
     x["relvol20"] = x["volume"] / x["volume"].rolling(20, min_periods=10).mean()
@@ -97,8 +88,7 @@ def build_single_stock_frame(stock: pd.DataFrame, context: pd.DataFrame | None =
     for k, v in defaults.items():
         if k not in x:
             x[k] = v
-    # IMPORTANT: all context/news/corporate-action values must represent information
-    # that was actually published and available before the next-session open.
+        x[k] = x[k].fillna(v)
     x["next_open"] = x["open"].shift(-1)
     x["next_high"] = x["high"].shift(-1)
     x["next_low"] = x["low"].shift(-1)
@@ -113,8 +103,6 @@ def _trade_outcome(row: pd.Series, target: float, stop: float) -> tuple[int, flo
     hi = float(row["next_open_to_high"])
     lo = float(row["next_open_to_low"])
     close_ret = float(row["next_open_to_close"])
-    # Conservative ambiguity rule when both barriers occur intraday and daily OHLC cannot
-    # determine order: stop is assumed to occur first.
     if lo <= -stop:
         return 0, -stop, "stop"
     if hi >= target:
@@ -146,88 +134,79 @@ def walk_forward_oos(
     for end in range(train_days, len(unique_dates), step_days):
         train_dates = unique_dates[max(0, end - train_days):end]
         test_dates = unique_dates[end:min(end + test_days, len(unique_dates))]
-        if len(test_dates) == 0:
+        if not len(test_dates):
             break
         train = data[data["date"].isin(train_dates)]
-        test = data[data["date"].isin(test_dates)]
-        if len(train) < min_train_rows:
+        test = data[data["date"].isin(test_dates)].copy()
+        if len(train) < min_train_rows or train["next_open_to_high"].ge(target).nunique() < 2:
             continue
-        Xtr, Xte = train[FEATURES].astype(float), test[FEATURES].astype(float)
-        ytr = (train["next_open_to_high"] >= target).astype(int)
-        model = HistGradientBoostingClassifier(
+        ytr = train["next_open_to_high"].ge(target).astype(int)
+        clf = HistGradientBoostingClassifier(
             max_iter=250, learning_rate=0.035, max_leaf_nodes=15,
             l2_regularization=1.0, random_state=42,
         )
-        model.fit(Xtr, ytr)
-        p = model.predict_proba(Xte)[:, 1]
+        clf.fit(train[FEATURES].astype(float), ytr)
+        p = clf.predict_proba(test[FEATURES].astype(float))[:, 1]
         reg = HistGradientBoostingRegressor(
             max_iter=200, learning_rate=0.04, max_leaf_nodes=15,
             l2_regularization=1.0, random_state=42,
         )
-        reg.fit(Xtr, train["next_open_to_high"])
-        expected_high = reg.predict(Xte)
+        reg.fit(train[FEATURES].astype(float), train["next_open_to_high"].astype(float))
+        expected_high = reg.predict(test[FEATURES].astype(float))
         pred = test[["date", "close", "next_open"]].copy()
         pred["prob_target"] = p
         pred["expected_open_to_high"] = expected_high
-        pred["trade"] = pred["prob_target"] >= probability_gate
+        pred["trade"] = p >= probability_gate
         all_preds.append(pred)
-        for idx, r in test.iterrows():
-            prob = float(p[test.index.get_loc(idx)]) if hasattr(test.index, "get_loc") else float(p[0])
-            if prob < probability_gate:
+        for i, (_, r) in enumerate(test.iterrows()):
+            if float(p[i]) < probability_gate:
                 continue
             hit, ret, exit_reason = _trade_outcome(r, target, stop)
             all_trades.append({
                 "date": r["date"], "entry": r["next_open"], "return": ret,
                 "hit_target": hit, "exit_reason": exit_reason,
-                "prob_target": prob, "expected_open_to_high": float(expected_high[test.index.get_loc(idx)]),
+                "prob_target": float(p[i]), "expected_open_to_high": float(expected_high[i]),
             })
     predictions = pd.concat(all_preds, ignore_index=True) if all_preds else pd.DataFrame()
     trades = pd.DataFrame(all_trades)
     if predictions.empty:
         raise ValueError("Walk-forward produced no OOS predictions; increase history or reduce train_days")
-    actual = data.set_index("date").loc[predictions["date"], "next_open_to_high"].to_numpy()
+    aligned = data[["date", "next_open_to_high"]].merge(predictions[["date"]], on="date", how="right")
+    actual = aligned["next_open_to_high"].to_numpy()
     predp = predictions["prob_target"].to_numpy()
+    y_actual = (actual >= target).astype(int)
     metrics = {
         "oos_days": int(predictions["date"].nunique()),
         "oos_rows": int(len(predictions)),
-        "auc": float(roc_auc_score((actual >= target).astype(int), predp)) if len(np.unique(actual >= target)) > 1 else float("nan"),
-        "average_precision": float(average_precision_score((actual >= target).astype(int), predp)),
+        "positive_rate": float(y_actual.mean()),
+        "auc": float(roc_auc_score(y_actual, predp)) if len(np.unique(y_actual)) > 1 else float("nan"),
+        "average_precision": float(average_precision_score(y_actual, predp)),
         "mae_open_to_high": float(mean_absolute_error(actual, predictions["expected_open_to_high"])),
     }
     if not trades.empty:
         r = trades["return"].astype(float)
+        eq = (1 + r).cumprod()
+        dd = eq / eq.cummax() - 1
+        monthly = trades.assign(month=pd.to_datetime(trades["date"]).dt.to_period("M")).groupby("month")["return"].apply(lambda s: (1 + s).prod() - 1)
         metrics.update({
             "trade_count": int(len(trades)),
             "hit_rate": float(trades["hit_target"].mean()),
             "mean_trade_return": float(r.mean()),
             "median_trade_return": float(r.median()),
-            "gross_compounded_return": float((1 + r).prod() - 1),
-            "max_drawdown": float(_max_drawdown(r)),
-            "monthly_avg_return": float(_monthly_avg_return(trades)),
+            "gross_compounded_return": float(eq.iloc[-1] - 1),
+            "max_drawdown": float(dd.min()),
+            "monthly_avg_return": float(monthly.mean()),
+            "monthly_median_return": float(monthly.median()),
+            "months_tested": int(monthly.shape[0]),
         })
     else:
-        metrics.update({"trade_count": 0})
+        metrics["trade_count"] = 0
     return OOSReport(predictions, metrics, trades)
-
-
-def _max_drawdown(r: pd.Series) -> float:
-    eq = (1 + r).cumprod()
-    peak = eq.cummax()
-    return float((eq / peak - 1).min())
-
-
-def _monthly_avg_return(trades: pd.DataFrame) -> float:
-    if trades.empty:
-        return float("nan")
-    t = trades.copy()
-    t["month"] = pd.to_datetime(t["date"]).dt.to_period("M")
-    monthly = t.groupby("month")["return"].apply(lambda s: float((1 + s).prod() - 1))
-    return float(monthly.mean()) if len(monthly) else float("nan")
 
 
 def fit_latest(frame: pd.DataFrame, target: float = 0.0275) -> tuple[HistGradientBoostingClassifier, HistGradientBoostingRegressor]:
     work = frame.dropna(subset=FEATURES + ["next_open_to_high"]).copy()
-    y = (work["next_open_to_high"] >= target).astype(int)
+    y = work["next_open_to_high"].ge(target).astype(int)
     clf = HistGradientBoostingClassifier(max_iter=300, learning_rate=0.03, max_leaf_nodes=15, l2_regularization=1.0, random_state=42)
     clf.fit(work[FEATURES], y)
     reg = HistGradientBoostingRegressor(max_iter=250, learning_rate=0.04, max_leaf_nodes=15, l2_regularization=1.0, random_state=42)
