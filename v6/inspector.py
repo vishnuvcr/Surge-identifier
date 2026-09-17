@@ -1,5 +1,5 @@
 from __future__ import annotations
-import ast, re
+import ast
 from pathlib import Path
 import yaml
 
@@ -21,7 +21,12 @@ def main():
     if 'pred_regime' not in text: fail('regime classifier missing',f)
     if "groupby(['actual_regime','strategy'])" not in text: fail('regime-strategy learning map missing',f)
     if 'run_wfo' not in text or 'run_7030' not in text or 'run_new_oos' not in text: fail('required evaluation modes missing',f)
-    if re.search(r'entry_date>=pd\.Timestamp\(CFG\[.new_oos_start.\]\)',text) is None: fail('new OOS selection boundary is not explicit',f)
+    # Explicitly require that the engine constructs the held-out OOS set using the configured boundary.
+    boundary_checks = [
+        "oos=ds[ds.entry_date>=pd.Timestamp(CFG['new_oos_start'])]",
+        "ds.entry_date>=pd.Timestamp(CFG['new_oos_start'])",
+    ]
+    if not any(x in text for x in boundary_checks): fail('new OOS selection boundary is not explicit',f)
     if "python v6/expiry_regime_engine.py" not in wf: fail('workflow does not execute V6 engine',f)
     print('=== V6 INSPECTOR ===')
     print('Blocking failures:',len(f))
