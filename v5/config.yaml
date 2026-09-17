@@ -1,0 +1,47 @@
+capital: 100000
+underlying: NIFTY
+entry_slippage_points: 0.50
+exit_slippage_points: 0.50
+brokerage_per_order: 20.0
+stt_sell_pct: 0.0015
+stamp_buy_pct: 0.00003
+sebi_turnover_pct: 0.000001
+exchange_txn_pct: 0.00035
+gst_pct: 0.18
+selection_dte_min: 14
+selection_dte_max: 35
+holding_days: 5
+strike_step_points: 50
+wing_width_points: 200
+spread_width_points: 100
+otm_points: 100
+risk_per_trade_pct: 0.10
+max_lots: 10
+min_training_samples: 150
+rolling_train_years: 3
+no_trade_threshold: 0.002
+min_predicted_edge_vs_second: 0.0005
+model:
+  n_estimators: 250
+  max_depth: 7
+  min_samples_leaf: 8
+  random_state: 42
+walk_forward:
+  - train_end: '2020-12-31'
+    test_start: '2021-01-01'
+    test_end: '2021-12-31'
+  - train_end: '2021-12-31'
+    test_start: '2022-01-01'
+    test_end: '2022-12-31'
+  - train_end: '2022-12-31'
+    test_start: '2023-01-01'
+    test_end: '2023-12-31'
+  - train_end: '2023-12-31'
+    test_start: '2024-01-01'
+    test_end: '2024-12-31'
+  - train_end: '2024-12-31'
+    test_start: '2025-01-01'
+    test_end: '2025-12-31'
+  - train_end: '2025-12-31'
+    test_start: '2026-01-01'
+    test_end: latest
