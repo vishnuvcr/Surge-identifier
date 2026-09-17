@@ -1,0 +1,27 @@
+{
+  "version": "V8.1",
+  "samples": 4636,
+  "features": 102,
+  "expiry_count": 451,
+  "history_end": "2026-09-16",
+  "new_oos_start": "2026-04-01",
+  "wfo_windows_completed": 6,
+  "wfo_windows_required": 6,
+  "latest": {
+    "signal_date": "2026-09-15",
+    "next_expiry": "2026-09-22",
+    "spot": 23118.599609375,
+    "candidate_count": 0,
+    "selected_ic": null
+  },
+  "research_gate": "RESEARCH_ONLY_PENDING_STABLE_OOS",
+  "objectives": {
+    "coherent_range": true,
+    "pop_from_expiry_payoff_distribution": true,
+    "touch_probability_from_path_distribution": true,
+    "post_cost_ic_payoff": true,
+    "six_window_wfo": true,
+    "70_30": true,
+    "new_oos": true
+  }
+}

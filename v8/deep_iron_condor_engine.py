@@ -44,15 +44,41 @@ def load_inputs():
         if c in flows: flows[c]=pd.to_numeric(flows[c],errors='coerce')
     return options,futures,context,news,index,prices,weights,membership,flows
 
-def strict_asof(left_dates,right,date_col='date'):
-    l=pd.DataFrame({'date':pd.to_datetime(pd.DatetimeIndex(left_dates),errors='coerce').tz_localize(None).normalize()})
-    r=right.copy(); r[date_col]=pd.to_datetime(r[date_col],errors='coerce').dt.tz_localize(None).dt.normalize(); r=r.dropna(subset=[date_col]).sort_values(date_col).rename(columns={date_col:'_date'})
-    return pd.merge_asof(l.sort_values('date'),r,left_on='date',right_on='_date',direction='backward',allow_exact_matches=False).set_index('date')
+def strict_asof(left_dates, right, date_col='date'):
+    """Strict point-in-time backward lookup without pandas merge_asof dtype fragility."""
+    left = pd.DatetimeIndex(pd.to_datetime(left_dates, errors='coerce'))
+    if left.tz is not None:
+        left = left.tz_localize(None)
+    left = left.normalize()
+    r = right.copy()
+    r[date_col] = pd.to_datetime(r[date_col], errors='coerce')
+    if hasattr(r[date_col].dt, 'tz') and r[date_col].dt.tz is not None:
+        r[date_col] = r[date_col].dt.tz_localize(None)
+    r[date_col] = r[date_col].dt.normalize()
+    r = r.dropna(subset=[date_col]).sort_values(date_col)
+    r = r.drop_duplicates(date_col, keep='last').rename(columns={date_col: '_date'})
+    out = pd.DataFrame(index=left)
+    out.index.name = 'date'
+    if r.empty:
+        return out
+    right_ns = r['_date'].to_numpy(dtype='datetime64[ns]').astype('int64')
+    left_ns = left.to_numpy(dtype='datetime64[ns]').astype('int64')
+    pos = np.searchsorted(right_ns, left_ns, side='left') - 1
+    valid = pos >= 0
+    safe = np.clip(pos, 0, len(r) - 1)
+    picked = r.iloc[safe].copy()
+    picked.index = left
+    if (~valid).any():
+        picked.loc[~valid, '_date'] = pd.NaT
+        for col in picked.columns:
+            if col != '_date':
+                picked.loc[~valid, col] = np.nan
+    return picked
 
 def make_constituent_features(dates,prices,weights,membership):
     p=prices.pivot_table(index='date',columns='symbol',values='close',aggfunc='last').sort_index(); r=p.pct_change(fill_method=None); symbols=[c for c in weights.columns if c!='DATE' and c in r.columns]
     if not symbols:return pd.DataFrame(index=pd.DatetimeIndex(dates))
-    wd=pd.DataFrame({'date':pd.DatetimeIndex(dates)}); wd['date']=pd.to_datetime(wd['date']).dt.normalize(); w=pd.merge_asof(wd.sort_values('date'),weights[['DATE']+symbols].sort_values('DATE'),left_on='date',right_on='DATE',direction='backward',allow_exact_matches=False).set_index('date'); W=w[symbols].fillna(0.0); R=r.reindex(pd.DatetimeIndex(dates))[symbols]
+    wsrc=weights[['DATE']+symbols].rename(columns={'DATE':'date'}); w=strict_asof(dates,wsrc).drop(columns=['_date'],errors='ignore'); W=w[symbols].fillna(0.0); R=r.reindex(pd.DatetimeIndex(dates))[symbols]
     for sym,g in membership.groupby('symbol'):
         if sym not in symbols:continue
         valid=pd.Series(False,index=W.index)

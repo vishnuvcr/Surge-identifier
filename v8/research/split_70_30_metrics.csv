@@ -1,0 +1,2 @@
+name,train_samples,test_samples,model_low_mae,model_close_mae,model_high_mae,naive_low_mae,naive_close_mae,naive_high_mae,close_mae_lift_vs_naive,strategy_trades,strategy_wins,strategy_win_rate,strategy_total_pnl,strategy_mean_pnl,strategy_profit_factor,strategy_max_drawdown,strategy_avg_reward_risk,strategy_avg_model_pop,strategy_avg_touch,strategy_avg_max_loss
+70_30,4016,616,0.022661689659856963,0.036035481665853984,0.03475042002420602,0.016385985256794078,0.026719722789231914,0.0268546848087498,-0.3486472876274127,0,0,0,0,0,0,0,0,0,0,0
