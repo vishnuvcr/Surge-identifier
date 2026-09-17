@@ -34,65 +34,51 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: v6.1-nifty-prediction
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: pip
-
       - name: Install dependencies
         run: pip install -r requirements.txt
-
       - name: Independent V6.1 inspector
         run: python v6.1/inspector.py
-
       - name: Preflight
         run: |
-          python -m py_compile v6.1/nifty_prediction_engine.py v6.1/inspector.py
+          python -m py_compile v6.1/nifty_prediction_engine_v2.py v6.1/inspector.py
           python - <<'PY'
           import yaml
           cfg=yaml.safe_load(open('v6.1/config.yaml'))
-          assert cfg['new_oos_start'] == '2026-04-01'
-          assert cfg['history_end'] == '2026-09-16'
+          assert cfg['new_oos_start']=='2026-04-01'
+          assert cfg['history_end']=='2026-09-16'
           assert 0 < cfg['prediction_interval'] < 1
           print('V6.1 config OK')
           PY
-
       - name: Download complete NIFTY options and futures history
         run: python scripts/download_nifty_nse_history.py
-
       - name: Download market context
         run: python scripts/download_v5_market_context.py
-
       - name: Download FII/DII/PCR context
         run: python scripts/download_v5_flow_context.py
-
       - name: Download historical news sentiment
         run: |
           mkdir -p data/cache
           python - <<'PY'
           import os, requests
-          u=os.environ['HF_NEWS_URL']
-          out='data/cache/v5_news_daily.csv'
+          u=os.environ['HF_NEWS_URL']; out='data/cache/v5_news_daily.csv'
           r=requests.get(u,timeout=120,headers={'User-Agent':'V6.1-research/1.0'})
-          r.raise_for_status()
-          open(out,'wb').write(r.content)
+          r.raise_for_status(); open(out,'wb').write(r.content)
           print('news bytes',len(r.content))
           PY
-
       - name: Normalize news schema
         run: |
           python - <<'PY'
           import pandas as pd
-          p='data/cache/v5_news_daily.csv'
-          n=pd.read_csv(p)
+          p='data/cache/v5_news_daily.csv'; n=pd.read_csv(p)
           n.columns=[str(c).strip().lower() for c in n.columns]
           assert 'date' in n.columns
-          n.to_csv(p,index=False)
-          print(list(n.columns))
+          n.to_csv(p,index=False); print(list(n.columns))
           PY
-
       - name: Validate inputs
         run: |
           test -s data/cache/nifty_options_long.parquet
@@ -100,10 +86,8 @@ jobs:
           test -s data/cache/v5_market_context.parquet
           test -s data/cache/v5_flow_context.parquet
           test -s data/cache/v5_news_daily.csv
-
       - name: Run V6.1 NIFTY prediction research
-        run: python v6.1/nifty_prediction_engine.py
-
+        run: python v6.1/nifty_prediction_engine_v2.py
       - name: Validate V6.1 outputs
         run: |
           test -s v6.1/research/summary.json
@@ -118,14 +102,13 @@ jobs:
           assert s['sample_count'] >= 150
           assert s['target'] == 'NIFTY next-expiry close and return'
           o=pd.read_csv('v6.1/research/new_oos_predictions.csv')
-          assert len(o) > 0
+          assert len(o)>0
           assert (pd.to_datetime(o['expiry']) <= pd.Timestamp('2026-09-16')).all()
           latest=json.load(open('v6.1/research/latest_forecast.json'))
           assert latest['available'] is True
           assert latest['next_expiry'] > '2026-09-16'
           print(json.dumps({'samples':s['sample_count'],'selected_model':s['selected_production_model'],'latest_forecast':latest,'new_oos_metrics':s['new_oos']},indent=2))
           PY
-
       - name: Commit V6.1 prediction results
         run: |
           git config user.name 'github-actions[bot]'
@@ -134,7 +117,6 @@ jobs:
           git diff --cached --quiet || git commit -m 'Publish V6.1 NIFTY prediction research results [skip ci]'
           git pull --rebase origin v6.1-nifty-prediction
           git push origin v6.1-nifty-prediction
-
       - name: Upload V6.1 artifact
         uses: actions/upload-artifact@v4
         with:
