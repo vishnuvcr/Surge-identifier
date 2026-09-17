@@ -1,0 +1,12 @@
+{
+  "purpose": "Fast preflight memory for V5.1. Add a new rule whenever a run discovers a failure that should be prevented before expensive historical downloads or model execution.",
+  "lessons": [
+    {"id":"NEWS_SCHEMA_CASE","lesson":"External news feeds may expose Date rather than date.","guard":"Normalize external CSV column names before validation and model ingestion."},
+    {"id":"PAYOFF_INVARIANT_FATAL","lesson":"A single malformed historical option quote must not abort an otherwise valid multi-year research run.","guard":"Keep the economic payoff invariant, but isolate and record PAYOFF_INVARIANT_FAILED observations."},
+    {"id":"EXPENSIVE_RUN_WITHOUT_GATE","lesson":"Never start multi-hour data acquisition/backtesting before cheap static and structural checks pass.","guard":"Independent inspector must complete before the backtest job can start."},
+    {"id":"SAFE_RUNNER_REQUIRED","lesson":"The V5.1 workflow must execute the guarded runner rather than the raw research runner.","guard":"Inspector blocks any direct python v5/run.py execution as the production research step."},
+    {"id":"CONTEXT_KEY_DRIFT","lesson":"Feature names and external-series identifiers can drift and silently produce NaNs.","guard":"Inspector checks known external-key mappings and the safe runner repairs legacy raw Yahoo-symbol lookups."},
+    {"id":"OUTPUT_GATE","lesson":"A green compute step is not enough; research artifacts must satisfy structural and economic invariants.","guard":"Post-run validation checks required files, one-lot constraints, payoff bounds and six walk-forward windows."},
+    {"id":"LEAKAGE_GUARD","lesson":"Context/news must remain point-in-time and never be future-filled.","guard":"Inspector checks the as-of cutoff implementation and workflow architecture; post-run review remains mandatory."}
+  ]
+}
