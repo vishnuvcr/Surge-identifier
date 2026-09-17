@@ -1,0 +1,16 @@
+start: '2015-01-01'
+end: '2026-09-16'
+# Point-in-time market context. All features are lagged before joining to signal_date.
+yahoo_symbols:
+  india_vix: '^INDIAVIX'
+  nifty_bank: '^NSEBANK'
+  nifty_midcap: '^NSMIDCP'
+  spx: '^GSPC'
+  spx_vix: '^VIX'
+  usd_inr: 'INR=X'
+  brent: 'BZ=F'
+context_path: 'data/cache/v5_market_context.parquet'
+news_path: 'data/cache/v5_news_daily.csv'
+# A historical news/sentiment file is optional in V5.1 until a point-in-time
+# licensed feed is wired in. The research engine never substitutes future news.
+required_news_coverage_start: '2018-01-01'
