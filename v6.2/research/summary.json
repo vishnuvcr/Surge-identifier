@@ -1,0 +1,186 @@
+{
+  "version": "V7",
+  "sample_count": 2316,
+  "feature_count_global": 75,
+  "constituent_symbols": 83,
+  "sequence_length": 20,
+  "sample_stride": 2,
+  "selected_production_model": "deep_transformer",
+  "history_end": "2026-09-16",
+  "new_oos_start": "2026-04-01",
+  "wfo": [
+    {
+      "mae": 0.05308985616269299,
+      "rmse": 0.061063160743667196,
+      "direction_accuracy": 0.0,
+      "regime_accuracy": 0.5,
+      "correlation": -0.20299211717740367,
+      "samples": 4,
+      "window": 1,
+      "model": "deep_transformer"
+    },
+    {
+      "mae": 0.029314802020813907,
+      "rmse": 0.038482124387175395,
+      "direction_accuracy": 0.25,
+      "regime_accuracy": 0.75,
+      "correlation": 0.0,
+      "samples": 4,
+      "window": 1,
+      "model": "naive"
+    }
+  ],
+  "split_70_30": [
+    {
+      "mae": 0.05232256142719251,
+      "rmse": 0.05778742678044144,
+      "direction_accuracy": 0.45901639344262296,
+      "regime_accuracy": 0.39344262295081966,
+      "correlation": -0.01176925472232796,
+      "samples": 61,
+      "model": "deep_transformer"
+    },
+    {
+      "mae": 0.01048876233963508,
+      "rmse": 0.01314687251074428,
+      "direction_accuracy": 0.4426229508196721,
+      "regime_accuracy": 0.4918032786885246,
+      "correlation": 0.0,
+      "samples": 61,
+      "model": "naive"
+    }
+  ],
+  "new_oos": [
+    {
+      "mae": 0.05069235617893543,
+      "rmse": 0.05199476780510789,
+      "direction_accuracy": 0.3,
+      "regime_accuracy": 0.3,
+      "correlation": -0.1241977843053712,
+      "samples": 10,
+      "model": "deep_transformer"
+    },
+    {
+      "mae": 0.009613197971802967,
+      "rmse": 0.010690656479818025,
+      "direction_accuracy": 0.3,
+      "regime_accuracy": 0.6,
+      "correlation": 0.0,
+      "samples": 10,
+      "model": "naive"
+    }
+  ],
+  "latest_forecast": {
+    "available": true,
+    "version": "V7",
+    "signal_date": "2026-09-16",
+    "latest_feature_date": "2026-09-16",
+    "next_expiry": "2026-09-22",
+    "spot": 23217.599609375,
+    "production_model": "deep_transformer",
+    "predicted_return": 0.030707724392414093,
+    "predicted_close": 23930.55925923311,
+    "predicted_low": 22697.75477424478,
+    "predicted_high": 27065.561362304754,
+    "regime": "BULLISH",
+    "regime_probabilities": {
+      "BEARISH": 0.34673619270324707,
+      "RANGE_BOUND": 0.14064404368400574,
+      "BULLISH": 0.5126197338104248
+    },
+    "prediction_interval": 0.9,
+    "close_quantiles_return": {
+      "q10": -0.016027748584747314,
+      "q50": 0.030707724392414093,
+      "q90": 0.09785056114196777
+    },
+    "low_quantiles_return": {
+      "q10": -0.02239011973142624,
+      "q50": 0.0391947403550148,
+      "q90": 0.10647398978471756
+    },
+    "high_quantiles_return": {
+      "q10": -0.05316871032118797,
+      "q50": 0.02341299131512642,
+      "q90": 0.1657346934080124
+    },
+    "forecast_feature_date_verified": true,
+    "forecast_type": "fresh_current_cutoff_deep_multimodal"
+  },
+  "latest_paper_trade": {
+    "action": "BULL_CALL_SPREAD",
+    "lot_size": 65,
+    "legs": [
+      [
+        "BUY",
+        "CE",
+        23200.0,
+        177.5
+      ],
+      [
+        "SELL",
+        "CE",
+        23450.0,
+        64.1
+      ]
+    ],
+    "entry_debit_per_unit": 113.4,
+    "estimated_max_loss": 7371.0,
+    "estimated_max_profit": 8879.0,
+    "capital_requirement": 7371.0
+  },
+  "news_manifest": {
+    "repo": "mveen3/Six_Year_Indian_Stock_Market_Dataset-News_and_Ticker",
+    "filename": "dataset/news_sentiment.csv",
+    "revision": "main",
+    "rows": 114100,
+    "min_date": "2020-01-01",
+    "max_date": "2026-03-31",
+    "columns": [
+      "date",
+      "symbol",
+      "direct_news_pos",
+      "direct_news_neu",
+      "direct_news_neg",
+      "sectoral_news_pos",
+      "sectoral_news_neu",
+      "sectoral_news_neg",
+      "global_news_pos",
+      "global_news_neu",
+      "global_news_neg",
+      "direct_news_count",
+      "sectoral_news_count",
+      "global_news_count"
+    ]
+  },
+  "fii_dii_manifest": {
+    "dataset": "pravinpari/fii-and-dii-investments-in-indian-stock-market",
+    "dataset_path": "/home/runner/.cache/kagglehub/datasets/pravinpari/fii-and-dii-investments-in-indian-stock-market/versions/1",
+    "selected": {
+      "source_file": "fii_dii.xlsx",
+      "date_column": "date",
+      "fii_source": "fii_net_purchase_sales",
+      "dii_source": "dii_net_purchase_sales",
+      "rows": 2340,
+      "start": "2014-01-01",
+      "end": "2023-07-17"
+    },
+    "candidate_tables": [
+      {
+        "source_file": "fii_dii.xlsx",
+        "date_column": "date",
+        "fii_source": "fii_net_purchase_sales",
+        "dii_source": "dii_net_purchase_sales",
+        "rows": 2340,
+        "start": "2014-01-01",
+        "end": "2023-07-17"
+      }
+    ],
+    "rows": 2340,
+    "start": "2014-01-01",
+    "end": "2023-07-17",
+    "fii_missing": 0,
+    "dii_missing": 0
+  },
+  "research_gate": "RESEARCH_ONLY_PENDING_STABLE_OOS"
+}

@@ -1,0 +1,3 @@
+mae,rmse,direction_accuracy,regime_accuracy,correlation,samples,window,model
+0.05308985616269299,0.061063160743667196,0.0,0.5,-0.20299211717740367,4,1,deep_transformer
+0.029314802020813907,0.038482124387175395,0.25,0.75,0.0,4,1,naive

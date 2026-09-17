@@ -1,0 +1,37 @@
+{
+  "available": true,
+  "version": "V7",
+  "signal_date": "2026-09-16",
+  "latest_feature_date": "2026-09-16",
+  "next_expiry": "2026-09-22",
+  "spot": 23217.599609375,
+  "production_model": "deep_transformer",
+  "predicted_return": 0.030707724392414093,
+  "predicted_close": 23930.55925923311,
+  "predicted_low": 22697.75477424478,
+  "predicted_high": 27065.561362304754,
+  "regime": "BULLISH",
+  "regime_probabilities": {
+    "BEARISH": 0.34673619270324707,
+    "RANGE_BOUND": 0.14064404368400574,
+    "BULLISH": 0.5126197338104248
+  },
+  "prediction_interval": 0.9,
+  "close_quantiles_return": {
+    "q10": -0.016027748584747314,
+    "q50": 0.030707724392414093,
+    "q90": 0.09785056114196777
+  },
+  "low_quantiles_return": {
+    "q10": -0.02239011973142624,
+    "q50": 0.0391947403550148,
+    "q90": 0.10647398978471756
+  },
+  "high_quantiles_return": {
+    "q10": -0.05316871032118797,
+    "q50": 0.02341299131512642,
+    "q90": 0.1657346934080124
+  },
+  "forecast_feature_date_verified": true,
+  "forecast_type": "fresh_current_cutoff_deep_multimodal"
+}

@@ -1,0 +1,2 @@
+action,lot_size,legs,entry_debit_per_unit,estimated_max_loss,estimated_max_profit,capital_requirement
+BULL_CALL_SPREAD,65,"[['BUY', 'CE', 23200.0, 177.5], ['SELL', 'CE', 23450.0, 64.1]]",113.4,7371.0,8879.0,7371.0
