@@ -21,10 +21,8 @@ MEMBERSHIP_URL = 'https://raw.githubusercontent.com/aditya-jha/nse-historical-me
 def download_weights() -> pd.DataFrame:
     out = CACHE / 'v62_constituent_weights.csv'
     if not out.exists():
-        r = requests.get(CFG['constituents']['weights_url'], headers=UA, timeout=120)
-        r.raise_for_status(); out.write_bytes(r.content)
-    w = pd.read_csv(out)
-    w.columns = [str(c).strip().upper() for c in w.columns]
+        r = requests.get(CFG['constituents']['weights_url'], headers=UA, timeout=120); r.raise_for_status(); out.write_bytes(r.content)
+    w = pd.read_csv(out); w.columns = [str(c).strip().upper() for c in w.columns]
     if 'DATE' not in w.columns: raise RuntimeError('Constituent weights file has no DATE column')
     w['DATE'] = pd.to_datetime(w['DATE'], errors='coerce').dt.normalize()
     return w.dropna(subset=['DATE']).sort_values('DATE').drop_duplicates('DATE', keep='last')
@@ -33,23 +31,30 @@ def download_weights() -> pd.DataFrame:
 def download_sectors() -> pd.DataFrame:
     out = CACHE / 'v62_constituent_sectors.csv'
     if not out.exists():
-        r = requests.get(CFG['constituents']['sectors_url'], headers=UA, timeout=120)
-        r.raise_for_status(); out.write_bytes(r.content)
-    s = pd.read_csv(out); s.columns = [str(c).strip().upper() for c in s.columns]
-    return s
+        r = requests.get(CFG['constituents']['sectors_url'], headers=UA, timeout=120); r.raise_for_status(); out.write_bytes(r.content)
+    s = pd.read_csv(out); s.columns = [str(c).strip().upper() for c in s.columns]; return s
 
 
 def download_membership() -> pd.DataFrame:
     out = CACHE / 'v62_nifty50_membership.csv'
     if not out.exists():
-        r = requests.get(MEMBERSHIP_URL, headers=UA, timeout=120)
-        r.raise_for_status(); out.write_bytes(r.content)
-    m = pd.read_csv(out)
-    m.columns = [str(c).strip().lower() for c in m.columns]
+        r = requests.get(MEMBERSHIP_URL, headers=UA, timeout=120); r.raise_for_status(); out.write_bytes(r.content)
+    m = pd.read_csv(out); m.columns = [str(c).strip().lower() for c in m.columns]
     m = m[m['index_name'].astype(str).str.upper().eq('NIFTY 50')].copy()
-    m['valid_from'] = pd.to_datetime(m['valid_from'], errors='coerce').dt.normalize()
-    m['valid_to'] = pd.to_datetime(m['valid_to'], errors='coerce').dt.normalize()
+    m['valid_from'] = pd.to_datetime(m['valid_from'], errors='coerce').dt.normalize(); m['valid_to'] = pd.to_datetime(m['valid_to'], errors='coerce').dt.normalize()
     return m.dropna(subset=['valid_from'])
+
+
+def download_index_history() -> pd.DataFrame:
+    target = CACHE / 'v62_nifty50_index.parquet'
+    if not target.exists():
+        path = hf_hub_download(repo_id=CFG['constituents']['prices_repo'], filename='indices/NIFTY_50.parquet', repo_type='dataset')
+        df = pd.read_parquet(path); df.columns = [str(c).strip().lower() for c in df.columns]
+        if not {'date','close'}.issubset(df.columns): raise RuntimeError('NIFTY_50 index file missing date/close')
+        df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.normalize(); df['close'] = pd.to_numeric(df['close'], errors='coerce')
+        keep = [c for c in ['date','open','high','low','close','volume'] if c in df.columns]
+        df[keep].dropna(subset=['date','close']).drop_duplicates('date', keep='last').sort_values('date').to_parquet(target,index=False)
+    return pd.read_parquet(target)
 
 
 def _symbols(weights: pd.DataFrame) -> list[str]:
@@ -58,19 +63,16 @@ def _symbols(weights: pd.DataFrame) -> list[str]:
 
 
 def _fetch_price(symbol: str) -> tuple[str, str | None]:
-    safe = ''.join(ch if ch.isalnum() or ch in '._-' else '_' for ch in symbol)
-    target = CACHE / 'v62_constituent_parts' / f'{safe}.parquet'; target.parent.mkdir(parents=True, exist_ok=True)
+    safe = ''.join(ch if ch.isalnum() or ch in '._-' else '_' for ch in symbol); target = CACHE / 'v62_constituent_parts' / f'{safe}.parquet'; target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists() and target.stat().st_size > 0: return symbol, None
     try:
         path = hf_hub_download(repo_id=CFG['constituents']['prices_repo'], filename=f'stocks/{symbol}.parquet', repo_type='dataset')
         df = pd.read_parquet(path); df.columns = [str(c).strip().lower() for c in df.columns]
-        if not {'date', 'close'}.issubset(df.columns): return symbol, 'missing_date_close'
-        keep = ['date', 'close'] + (['volume'] if 'volume' in df.columns else [])
-        x = df[keep].copy(); x['date'] = pd.to_datetime(x['date'], errors='coerce').dt.normalize(); x['close'] = pd.to_numeric(x['close'], errors='coerce'); x['symbol'] = symbol
-        x = x.dropna(subset=['date', 'close']).drop_duplicates('date', keep='last'); x.to_parquet(target, index=False)
-        return symbol, None
-    except Exception as exc:
-        return symbol, f'{type(exc).__name__}:{exc}'
+        if not {'date','close'}.issubset(df.columns): return symbol, 'missing_date_close'
+        keep = ['date','close'] + (['volume'] if 'volume' in df.columns else []); x = df[keep].copy()
+        x['date'] = pd.to_datetime(x['date'], errors='coerce').dt.normalize(); x['close'] = pd.to_numeric(x['close'], errors='coerce'); x['symbol'] = symbol
+        x = x.dropna(subset=['date','close']).drop_duplicates('date', keep='last'); x.to_parquet(target,index=False); return symbol, None
+    except Exception as exc: return symbol, f'{type(exc).__name__}:{exc}'
 
 
 def download_prices(weights: pd.DataFrame) -> dict:
@@ -82,12 +84,9 @@ def download_prices(weights: pd.DataFrame) -> dict:
             if err: failures.append({'symbol':sym,'error':err})
     parts=sorted((CACHE/'v62_constituent_parts').glob('*.parquet'))
     if not parts: raise RuntimeError('No constituent price files downloaded')
-    all_prices=pd.concat([pd.read_parquet(p) for p in parts],ignore_index=True)
-    all_prices['date']=pd.to_datetime(all_prices['date']).dt.normalize(); all_prices=all_prices.sort_values(['symbol','date']).drop_duplicates(['symbol','date'],keep='last')
-    all_prices.to_parquet(CACHE/'v62_constituent_prices.parquet',index=False)
-    all_prices.groupby('symbol')['date'].agg(['min','max','count']).reset_index().to_csv(CACHE/'v62_constituent_coverage.csv',index=False)
-    manifest={'requested_symbols':len(symbols),'downloaded_symbols':int(all_prices.symbol.nunique()),'rows':int(len(all_prices)),'failures':failures[:200]}
-    (CACHE/'v62_constituent_manifest.json').write_text(json.dumps(manifest,indent=2)); return manifest
+    all_prices=pd.concat([pd.read_parquet(p) for p in parts],ignore_index=True); all_prices['date']=pd.to_datetime(all_prices['date']).dt.normalize(); all_prices=all_prices.sort_values(['symbol','date']).drop_duplicates(['symbol','date'],keep='last')
+    all_prices.to_parquet(CACHE/'v62_constituent_prices.parquet',index=False); all_prices.groupby('symbol')['date'].agg(['min','max','count']).reset_index().to_csv(CACHE/'v62_constituent_coverage.csv',index=False)
+    manifest={'requested_symbols':len(symbols),'downloaded_symbols':int(all_prices.symbol.nunique()),'rows':int(len(all_prices)),'failures':failures[:200]}; (CACHE/'v62_constituent_manifest.json').write_text(json.dumps(manifest,indent=2)); return manifest
 
 
 def download_flows() -> dict:
@@ -111,13 +110,11 @@ def download_flows() -> dict:
         for z in parsed[1:]: df=df.merge(z,on='date',how='outer')
         df=df.groupby('date',as_index=False).last().sort_values('date')
     else: df=pd.DataFrame(columns=['date','fii_net','dii_net'])
-    df.to_parquet(CACHE/'v62_fii_dii.parquet',index=False)
-    report={'rows':int(len(df)),'start':str(df.date.min().date()) if len(df) else None,'end':str(df.date.max().date()) if len(df) else None,'sheets':xl.sheet_names}
-    (CACHE/'v62_fii_dii_manifest.json').write_text(json.dumps(report,indent=2)); return report
+    df.to_parquet(CACHE/'v62_fii_dii.parquet',index=False); report={'rows':int(len(df)),'start':str(df.date.min().date()) if len(df) else None,'end':str(df.date.max().date()) if len(df) else None,'sheets':xl.sheet_names}; (CACHE/'v62_fii_dii_manifest.json').write_text(json.dumps(report,indent=2)); return report
 
 
 def main()->None:
-    w=download_weights(); s=download_sectors(); m=download_membership(); prices=download_prices(w); flows=download_flows()
-    print(json.dumps({'weights_rows':len(w),'weights_start':str(w.DATE.min().date()),'weights_end':str(w.DATE.max().date()),'sector_rows':len(s),'membership_rows':len(m),'membership_end':str(m.valid_from.max().date()),'constituent_prices':prices,'fii_dii':flows},indent=2))
+    w=download_weights(); s=download_sectors(); m=download_membership(); idx=download_index_history(); prices=download_prices(w); flows=download_flows()
+    print(json.dumps({'weights_rows':len(w),'weights_start':str(w.DATE.min().date()),'weights_end':str(w.DATE.max().date()),'sector_rows':len(s),'membership_rows':len(m),'index_rows':len(idx),'index_start':str(idx.date.min().date()),'index_end':str(idx.date.max().date()),'constituent_prices':prices,'fii_dii':flows},indent=2))
 
 if __name__=='__main__': main()
