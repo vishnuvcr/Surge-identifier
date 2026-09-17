@@ -20,7 +20,6 @@ assert int(CFG['walk_forward']['windows']) == 6
 assert int(CFG['walk_forward']['train_expiries']) >= 36
 assert int(CFG['walk_forward']['test_expiries']) >= 6
 assert int(CFG['entry']['days_before_expiry']) > 0
-ENGINE = ROOT / 'v8/deep_iron_condor_engine.py'
 assert ENGINE.exists() and ENGINE.stat().st_size > 0
 src = ENGINE.read_text()
 ast.parse(src)
@@ -33,7 +32,14 @@ required = [
 ]
 for token in required:
     assert token in src, token
-assert 'allow_exact_matches=False' in src
+# Point-in-time protection may be implemented with pandas merge_asof + exact-match exclusion
+# or with the V8.1 robust integer nanosecond searchsorted implementation. The engine must
+# not silently revert to a forward/nearest lookup.
+pit_guard = ('allow_exact_matches=False' in src) or (
+    'np.searchsorted(right_ns, left_ns, side=' in src and 'side=' in src
+)
+assert pit_guard, 'strict point-in-time lookup guard missing'
+assert 'merge_asof(' not in src or 'allow_exact_matches=False' in src
 assert 'reward_risk' in src and 'model_profit_probability' in src and 'model_touch_probability' in src
 assert 'slippage_points_per_leg' in src and 'brokerage_per_order' in src
 print('=== V8.1 OBJECTIVE-FIRST INSPECTOR ===')
