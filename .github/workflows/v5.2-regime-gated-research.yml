@@ -1,0 +1,121 @@
+name: V5.2 Regime Gated Options Research
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [v5.2-regime-gated-research]
+    paths:
+      - 'v5/**'
+      - 'scripts/download_v5_market_context.py'
+      - 'scripts/download_v5_flow_context.py'
+      - 'scripts/download_nifty_nse_history.py'
+      - '.github/workflows/v5.2-regime-gated-research.yml'
+      - '.github/workflows/v5.1-independent-inspector.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: v5.2-regime-gated-research
+  cancel-in-progress: true
+
+jobs:
+  inspector:
+    name: Independent V5.2 Inspector
+    uses: ./.github/workflows/v5.1-independent-inspector.yml
+
+  baseline_validation:
+    needs: inspector
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v5.2-regime-gated-research
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - name: Validate V5.2 harness
+        run: python -m py_compile v5/v5_2_regime_gate.py
+
+  backtest:
+    needs: baseline_validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      PYTHONUNBUFFERED: '1'
+      NSE_HISTORY_START: '2015-01-01'
+      NSE_HISTORY_END: '2026-09-16'
+      NSE_HISTORY_WORKERS: '5'
+      HF_NEWS_URL: 'https://huggingface.co/datasets/mveen3/Six_Year_Indian_Stock_Market_Dataset-News_and_Ticker/resolve/394913e6b62d643b6449538cf6d70f7f36bd0678/dataset/news_sentiment.csv?download=true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v5.2-regime-gated-research
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Download complete NIFTY options and futures history
+        run: python scripts/download_nifty_nse_history.py
+      - name: Download market context
+        run: python scripts/download_v5_market_context.py
+      - name: Download FII/DII/PCR context
+        run: python scripts/download_v5_flow_context.py
+      - name: Download historical news sentiment
+        run: |
+          mkdir -p data/cache
+          python - <<'PY'
+          import os, requests
+          u=os.environ['HF_NEWS_URL']
+          out='data/cache/v5_news_daily.csv'
+          r=requests.get(u,timeout=120,headers={'User-Agent':'V5-research/1.0'})
+          r.raise_for_status()
+          open(out,'wb').write(r.content)
+          print('news bytes',len(r.content))
+          PY
+      - name: Normalize news
+        run: |
+          python - <<'PY'
+          import pandas as pd
+          p='data/cache/v5_news_daily.csv'
+          n=pd.read_csv(p)
+          n.columns=[str(c).strip().lower() for c in n.columns]
+          assert 'date' in n.columns
+          assert any('news_' in c for c in n.columns)
+          n.to_csv(p,index=False)
+          PY
+      - name: Validate inputs
+        run: |
+          test -s data/cache/nifty_options_long.parquet
+          test -s data/cache/nifty_futures_long.parquet
+          test -s data/cache/v5_market_context.parquet
+          test -s data/cache/v5_flow_context.parquet
+          test -s data/cache/v5_news_daily.csv
+      - name: Run V5.2 configuration comparison
+        run: python v5/v5_2_regime_gate.py
+      - name: Validate V5.2 outputs
+        run: |
+          test -s v5/research/v5_2_config_comparison.json
+          python - <<'PY'
+          import json
+          x=json.load(open('v5/research/v5_2_config_comparison.json'))
+          assert len(x['variants']) == 3
+          assert all('overall_oos' in v for v in x['variants'] if v['returncode'] == 0)
+          print(json.dumps(x, indent=2)[:12000])
+          PY
+      - name: Commit V5.2 research comparison
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add v5/research/v5_2_config_comparison.json
+          git diff --cached --quiet || git commit -m 'Publish V5.2 regime-gated research comparison'
+          git pull --rebase origin v5.2-regime-gated-research
+          git push origin v5.2-regime-gated-research
+      - name: Upload V5.2 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: v5.2-regime-gated-research
+          path: v5/research/v5_2_config_comparison.json
