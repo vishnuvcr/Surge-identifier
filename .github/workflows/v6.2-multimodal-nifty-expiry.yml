@@ -30,7 +30,6 @@ jobs:
       NSE_HISTORY_END: '2026-09-16'
       NSE_HISTORY_WORKERS: '5'
       V62_PRICE_WORKERS: '8'
-      HF_NEWS_URL: 'https://huggingface.co/datasets/mveen3/Six_Year_Indian_Stock_Market_Dataset-News_and_Ticker/resolve/394913e6b62d643b6449538cf6d70f7f36bd067d/dataset/news_sentiment.csv?download=true'
 
     steps:
       - name: Checkout
@@ -52,7 +51,7 @@ jobs:
         run: python v6.2/inspector.py
 
       - name: Compile V6.2 implementation
-        run: python -m py_compile v6.2/download_multimodal_data.py v6.2/multimodal_engine.py v6.2/correct_latest_forecast.py v6.2/run_multimodal_safe.py v6.2/download_fii_dii_kaggle.py
+        run: python -m py_compile v6.2/download_multimodal_data.py v6.2/multimodal_engine.py v6.2/correct_latest_forecast.py v6.2/run_multimodal_safe.py v6.2/download_fii_dii_kaggle.py v6.2/download_news_robust.py
 
       - name: Download NIFTY options and futures history
         run: python scripts/download_nifty_nse_history.py
@@ -67,19 +66,7 @@ jobs:
         run: python v6.2/download_fii_dii_kaggle.py
 
       - name: Download historical news
-        run: |
-          mkdir -p data/cache
-          python - <<'PY'
-          import os, requests
-          u=os.environ['HF_NEWS_URL']; out='data/cache/v5_news_daily.csv'
-          r=requests.get(u,timeout=120,headers={'User-Agent':'V6.2-research/1.0'})
-          r.raise_for_status(); open(out,'wb').write(r.content); print('news bytes',len(r.content))
-          PY
-          python - <<'PY'
-          import pandas as pd
-          p='data/cache/v5_news_daily.csv'; n=pd.read_csv(p); n.columns=[str(c).strip().lower() for c in n.columns]
-          assert 'date' in n.columns; n.to_csv(p,index=False); print('news columns',list(n.columns))
-          PY
+        run: python v6.2/download_news_robust.py
 
       - name: Download multimodal constituent and index data
         run: python v6.2/download_multimodal_data.py
@@ -94,6 +81,7 @@ jobs:
           test -s data/cache/nifty_futures_long.parquet
           test -s data/cache/v5_market_context.parquet
           test -s data/cache/v5_news_daily.csv
+          test -s data/cache/v62_news_manifest.json
           test -s data/cache/v62_nifty50_index.parquet
           test -s data/cache/v62_constituent_prices.parquet
           test -s data/cache/v62_constituent_weights.csv
@@ -117,11 +105,13 @@ jobs:
               assert (root/p).exists() and (root/p).stat().st_size>0, p
           s=json.load(open(root/'summary.json')); latest=json.load(open(root/'latest_forecast.json'))
           flow=json.load(open('data/cache/v62_fii_dii_manifest.json'))
+          news=json.load(open('data/cache/v62_news_manifest.json'))
           assert s['sample_count'] >= 180, s['sample_count']
           assert s['feature_count'] >= 40, s['feature_count']
           assert s['history_end']=='2026-09-16'
           assert s['new_oos_start']=='2026-04-01'
           assert flow['rows'] >= 100, flow
+          assert news['rows'] >= 100, news
           assert latest['available'] is True
           assert latest['forecast_feature_date_verified'] is True
           assert latest['signal_date'] == latest['latest_feature_date']
@@ -129,7 +119,7 @@ jobs:
           o=pd.read_csv(root/'new_oos_predictions.csv')
           assert len(o)>0
           assert (pd.to_datetime(o['expiry']) <= pd.Timestamp('2026-09-16')).all()
-          print(json.dumps({'samples':s['sample_count'],'features':s['feature_count'],'selected_model':s['selected_production_model'],'latest_forecast':latest,'fii_dii':flow,'new_oos_metrics':s['new_oos']},indent=2))
+          print(json.dumps({'samples':s['sample_count'],'features':s['feature_count'],'selected_model':s['selected_production_model'],'latest_forecast':latest,'fii_dii':flow,'news':news,'new_oos_metrics':s['new_oos']},indent=2))
           PY
 
       - name: Commit V6.2 research results
