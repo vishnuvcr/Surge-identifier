@@ -5,14 +5,14 @@
     "train_end": "2020-12-31",
     "test_start": "2021-01-01",
     "test_end": "2021-12-31",
-    "training_rows": 642,
-    "test_rows": 237,
+    "training_rows": 574,
+    "test_rows": 235,
     "choices": {
-      "IRON_BUTTERFLY": 19,
-      "BULL_PUT_SPREAD": 11,
-      "BULL_CALL_SPREAD": 4,
-      "IRON_CONDOR": 3,
-      "BEAR_PUT_SPREAD": 1
+      "BULL_PUT_SPREAD": 22,
+      "IRON_BUTTERFLY": 6,
+      "BEAR_PUT_SPREAD": 6,
+      "BULL_CALL_SPREAD": 3,
+      "IRON_CONDOR": 2
     }
   },
   {
@@ -21,12 +21,13 @@
     "train_end": "2021-12-31",
     "test_start": "2022-01-01",
     "test_end": "2022-12-31",
-    "training_rows": 708,
-    "test_rows": 238,
+    "training_rows": 635,
+    "test_rows": 234,
     "choices": {
-      "BULL_CALL_SPREAD": 17,
-      "IRON_BUTTERFLY": 16,
-      "IRON_CONDOR": 3,
+      "IRON_BUTTERFLY": 14,
+      "BULL_CALL_SPREAD": 14,
+      "IRON_CONDOR": 6,
+      "BEAR_PUT_SPREAD": 2,
       "BULL_PUT_SPREAD": 2
     }
   },
@@ -36,13 +37,14 @@
     "train_end": "2022-12-31",
     "test_start": "2023-01-01",
     "test_end": "2023-12-31",
-    "training_rows": 716,
-    "test_rows": 235,
+    "training_rows": 657,
+    "test_rows": 229,
     "choices": {
-      "BULL_PUT_SPREAD": 15,
-      "IRON_BUTTERFLY": 12,
-      "BULL_CALL_SPREAD": 6,
-      "IRON_CONDOR": 3
+      "BULL_PUT_SPREAD": 24,
+      "BULL_CALL_SPREAD": 5,
+      "IRON_BUTTERFLY": 3,
+      "IRON_CONDOR": 2,
+      "BEAR_PUT_SPREAD": 1
     }
   },
   {
@@ -51,13 +53,14 @@
     "train_end": "2023-12-31",
     "test_start": "2024-01-01",
     "test_end": "2024-12-31",
-    "training_rows": 710,
-    "test_rows": 238,
+    "training_rows": 679,
+    "test_rows": 231,
     "choices": {
-      "BULL_PUT_SPREAD": 22,
-      "IRON_BUTTERFLY": 7,
-      "BULL_CALL_SPREAD": 4,
-      "IRON_CONDOR": 2
+      "BULL_PUT_SPREAD": 16,
+      "BULL_CALL_SPREAD": 8,
+      "IRON_BUTTERFLY": 6,
+      "IRON_CONDOR": 4,
+      "BEAR_PUT_SPREAD": 1
     }
   },
   {
@@ -66,13 +69,13 @@
     "train_end": "2024-12-31",
     "test_start": "2025-01-01",
     "test_end": "2025-12-31",
-    "training_rows": 711,
-    "test_rows": 248,
+    "training_rows": 669,
+    "test_rows": 243,
     "choices": {
-      "BULL_CALL_SPREAD": 22,
-      "BULL_PUT_SPREAD": 14,
-      "BEAR_PUT_SPREAD": 1,
-      "IRON_BUTTERFLY": 1
+      "BULL_PUT_SPREAD": 21,
+      "BULL_CALL_SPREAD": 13,
+      "IRON_BUTTERFLY": 2,
+      "BEAR_PUT_SPREAD": 1
     }
   },
   {
@@ -81,14 +84,13 @@
     "train_end": "2025-12-31",
     "test_start": "2026-01-01",
     "test_end": "2026-09-16",
-    "training_rows": 721,
-    "test_rows": 168,
+    "training_rows": 675,
+    "test_rows": 166,
     "choices": {
-      "IRON_BUTTERFLY": 9,
-      "BULL_PUT_SPREAD": 5,
-      "LONG_CALL": 5,
-      "LONG_PUT": 5,
-      "NO_TRADE": 4
+      "IRON_BUTTERFLY": 14,
+      "BULL_PUT_SPREAD": 8,
+      "BULL_CALL_SPREAD": 5,
+      "BEAR_CALL_SPREAD": 1
     }
   }
 ]
