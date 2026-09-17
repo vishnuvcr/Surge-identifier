@@ -1,0 +1,91 @@
+name: Single Stock ML Walk-Forward OOS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      symbol:
+        description: NSE EQ symbol
+        required: true
+        default: RELIANCE
+      target:
+        description: Fixed target for baseline run
+        required: true
+        default: '0.0275'
+      stop:
+        description: Fixed stop for baseline run
+        required: true
+        default: '0.0125'
+      probability_gate:
+        description: Fixed probability gate for baseline run
+        required: true
+        default: '0.60'
+      initial_capital:
+        description: Starting capital in INR
+        required: true
+        default: '100000'
+      cost_bps_per_side:
+        description: Configurable trading cost per side in bps
+        required: true
+        default: '8'
+      slippage_bps_per_side:
+        description: Configurable slippage per side in bps
+        required: true
+        default: '3'
+      risk_fraction:
+        description: Maximum capital risked per trade
+        required: true
+        default: '0.01'
+
+env:
+  TEST_BRANCH: single-stock-intraday-ls-v2
+  TEST_SYMBOL: RELIANCE
+  TEST_TARGET: '0.0275'
+  TEST_STOP: '0.0125'
+  TEST_GATE: '0.60'
+  TEST_CAPITAL: '100000'
+  TEST_COST: '8'
+  TEST_SLIPPAGE: '3'
+  TEST_RISK: '0.01'
+
+jobs:
+  oos:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tested strategy branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || env.TEST_BRANCH }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - run: pip install -r requirements.txt
+
+      - name: Run single-stock nested walk-forward OOS
+        run: |
+          SYMBOL="${{ github.event_name == 'workflow_dispatch' && inputs.symbol || env.TEST_SYMBOL }}"
+          TARGET="${{ github.event_name == 'workflow_dispatch' && inputs.target || env.TEST_TARGET }}"
+          STOP="${{ github.event_name == 'workflow_dispatch' && inputs.stop || env.TEST_STOP }}"
+          GATE="${{ github.event_name == 'workflow_dispatch' && inputs.probability_gate || env.TEST_GATE }}"
+          CAPITAL="${{ github.event_name == 'workflow_dispatch' && inputs.initial_capital || env.TEST_CAPITAL }}"
+          COST="${{ github.event_name == 'workflow_dispatch' && inputs.cost_bps_per_side || env.TEST_COST }}"
+          SLIPPAGE="${{ github.event_name == 'workflow_dispatch' && inputs.slippage_bps_per_side || env.TEST_SLIPPAGE }}"
+          RISK="${{ github.event_name == 'workflow_dispatch' && inputs.risk_fraction || env.TEST_RISK }}"
+          python scripts/run_single_stock_oos.py \
+            --symbol "$SYMBOL" \
+            --target "$TARGET" \
+            --stop "$STOP" \
+            --probability-gate "$GATE" \
+            --initial-capital "$CAPITAL" \
+            --cost-bps-per-side "$COST" \
+            --slippage-bps-per-side "$SLIPPAGE" \
+            --risk-fraction "$RISK"
+
+      - name: Upload OOS report
+        uses: actions/upload-artifact@v4
+        with:
+          name: single-stock-oos-${{ github.event_name == 'workflow_dispatch' && inputs.symbol || env.TEST_SYMBOL }}
+          path: reports/single_stock/
