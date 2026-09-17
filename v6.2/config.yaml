@@ -7,19 +7,18 @@ rolling_training_years: 4
 purge_days: 7
 embargo_days: 2
 seed: 42
+sequence_length: 10
+min_samples: 180
 
 models:
-  tabular:
-    enabled: true
-  deep_learning:
-    enabled: true
-    min_samples: 250
-  tft:
-    enabled: true
-  tkan:
-    enabled: false
-  dwt_cnn_lstm:
-    enabled: false
+  naive: true
+  ridge: true
+  rf: true
+  extra_trees: true
+  hgbr: true
+  xgboost: true
+  lstm: true
+  ensemble: true
 
 features:
   use_all_constituents: true
@@ -29,10 +28,33 @@ features:
   use_options_microstructure: true
   use_cross_asset: true
   use_news_sentiment: true
+  use_technical_expansion: true
+
+constituents:
+  weights_url: 'https://huggingface.co/datasets/AMP4010/Historical_Nifty_50_Constituent_Weights_20Y/resolve/main/weights.csv?download=true'
+  sectors_url: 'https://huggingface.co/datasets/AMP4010/Historical_Nifty_50_Constituent_Weights_20Y/resolve/main/sectors.csv?download=true'
+  prices_repo: 'vishnun0027/indian-market-historical-ohlcv'
+  weights_max_staleness_days: 180
+
+flows:
+  fallback_url: 'https://raw.githubusercontent.com/Hareeshkesavan/Stock-Market-Dataset/main/FII%20and%20DII.xlsx'
 
 options:
   enabled: true
   max_risk_per_trade_fraction: 0.02
-  slippage_ticks: 2
-  execution_mode: conservative_mid_worse
-  backtest_start: '2021-01-01'
+  entry_slippage_ticks: 2
+  exit_slippage_ticks: 2
+  wing_width_points: 250
+  spread_width_points: 250
+  otm_points: 250
+
+costs:
+  brokerage_per_order: 20.0
+  exchange_txn_pct: 0.0003503
+  sebi_turnover_pct: 0.000001
+  gst_pct: 0.18
+  stamp_buy_pct: 0.00003
+  stt_sell_pct_pre_2026_04_01: 0.001
+  stt_sell_pct_from_2026_04_01: 0.0015
+
+pages: true
