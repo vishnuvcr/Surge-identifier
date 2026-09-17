@@ -6,31 +6,66 @@ import yaml
 ROOT=Path(__file__).resolve().parents[1]
 ENGINE=ROOT/'v6/expiry_regime_engine.py'; CFG=ROOT/'v6/config.yaml'; WF=ROOT/'.github/workflows/v6-expiry-regime-research.yml'
 
-def fail(msg, out): out.append(msg); print('BLOCK:',msg)
+def fail(msg, out):
+    out.append(msg)
+    print('BLOCK:',msg)
+
 def main():
-    f=[]; cfg=yaml.safe_load(CFG.read_text()); text=ENGINE.read_text(); wf=WF.read_text()
+    f=[]
+    cfg=yaml.safe_load(CFG.read_text())
+    text=ENGINE.read_text()
+    wf=WF.read_text()
     for p in [ENGINE,CFG,WF]:
-        if not p.exists(): fail(f'missing {p.relative_to(ROOT)}',f)
-    if f:return 1
-    try: ast.parse(text)
-    except SyntaxError as e: fail(f'engine syntax error: {e}',f)
-    if cfg['new_oos_start']!='2026-04-01': fail('new OOS start must remain 2026-04-01',f)
-    if cfg['top_k']<1: fail('top_k must be positive',f)
-    if 'target_return' not in text or 'pred_return' not in text: fail('expiry-return prediction path missing',f)
-    if "new_oos_start" not in text: fail('new OOS gate missing from engine',f)
-    if 'pred_regime' not in text: fail('regime classifier missing',f)
-    if "groupby(['actual_regime','strategy'])" not in text: fail('regime-strategy learning map missing',f)
-    if 'run_wfo' not in text or 'run_7030' not in text or 'run_new_oos' not in text: fail('required evaluation modes missing',f)
-    # Explicitly require that the engine constructs the held-out OOS set using the configured boundary.
-    boundary_checks = [
-        "oos=ds[ds.entry_date>=pd.Timestamp(CFG['new_oos_start'])]",
-        "ds.entry_date>=pd.Timestamp(CFG['new_oos_start'])",
-    ]
-    if not any(x in text for x in boundary_checks): fail('new OOS selection boundary is not explicit',f)
-    if "python v6/expiry_regime_engine.py" not in wf: fail('workflow does not execute V6 engine',f)
+        if not p.exists():
+            fail(f'missing {p.relative_to(ROOT)}',f)
+    if f:
+        return 1
+
+    try:
+        tree=ast.parse(text)
+    except SyntaxError as e:
+        fail(f'engine syntax error: {e}',f)
+        tree=None
+
+    if cfg['new_oos_start']!='2026-04-01':
+        fail('new OOS start must remain 2026-04-01',f)
+    if cfg['top_k']<1:
+        fail('top_k must be positive',f)
+    if 'target_return' not in text or 'pred_return' not in text:
+        fail('expiry-return prediction path missing',f)
+    if "new_oos_start" not in text:
+        fail('new OOS gate missing from engine',f)
+    if 'pred_regime' not in text:
+        fail('regime classifier missing',f)
+    if "groupby(['actual_regime','strategy'])" not in text:
+        fail('regime-strategy learning map missing',f)
+    if 'run_wfo' not in text or 'run_7030' not in text or 'run_new_oos' not in text:
+        fail('required evaluation modes missing',f)
+
+    # Verify the held-out OOS boundary structurally inside run_new_oos(), rather than
+    # relying on a formatting-sensitive regex/string match.
+    boundary_ok=False
+    if tree is not None:
+        for node in ast.walk(tree):
+            if isinstance(node,ast.FunctionDef) and node.name=='run_new_oos':
+                src=ast.get_source_segment(text,node) or ''
+                boundary_ok=(
+                    "new_oos_start" in src and
+                    "entry_date" in src and
+                    (">=pd.Timestamp(CFG['new_oos_start'])" in src or
+                     ">= pd.Timestamp(CFG['new_oos_start'])" in src)
+                )
+                break
+    if not boundary_ok:
+        fail('new OOS selection boundary is not explicit',f)
+
+    if "python v6/expiry_regime_engine.py" not in wf:
+        fail('workflow does not execute V6 engine',f)
     print('=== V6 INSPECTOR ===')
     print('Blocking failures:',len(f))
-    for x in f: print('FAIL:',x)
+    for x in f:
+        print('FAIL:',x)
     return 1 if f else 0
 
-if __name__=='__main__': raise SystemExit(main())
+if __name__=='__main__':
+    raise SystemExit(main())
