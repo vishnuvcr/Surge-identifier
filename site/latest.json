@@ -1,35 +1,20 @@
 {
-  "asof_date": "2026-10-09",
-  "generated_at_ist": "2026-10-10T00:07:24.577640+05:30",
+  "asof_date": "2026-10-12",
+  "generated_at_ist": "2026-10-13T02:55:28.242845+05:30",
   "event_definition": "Next session intraday high >= +3% from next session open",
   "universe": "NSE CM EQ series with sufficient median turnover",
   "data_layers": [
     "NSE CM bhavcopy",
     "NSE F&O bhavcopy / positioning context"
   ],
-  "candidates": [
-    {
-      "symbol": "INOXGREEN",
-      "last_close": 128.92,
-      "surge_probability": 0.8939279913902283,
-      "expected_move_proxy": 0.12,
-      "atr_pct": 0.07663667390629846,
-      "relative_volume": 9.755496859136485,
-      "turnover_cr": 948.7137197119999,
-      "risk_flag": "normal",
-      "gap": 0.017031630170316392,
-      "pcr_deviation": 0.0,
-      "futures_oi_change_z": 0.0,
-      "futures_volume_rel20": 1.0
-    }
-  ],
+  "candidates": [],
   "model": {
     "type": "PyTorch MLP with LayerNorm/GELU/Dropout",
     "features": 32,
-    "threshold": 0.875,
-    "validation_precision": 0.65,
-    "validation_recall_sensitivity": 0.0014492753623188406,
-    "validation_specificity": 0.9998669656771447,
+    "threshold": 0.8500000000000001,
+    "validation_precision": 0.5925925925925926,
+    "validation_recall_sensitivity": 0.001759595293082591,
+    "validation_specificity": 0.9997902524597666,
     "validation_window_days": 60
   },
   "research_status": "signal-ranking research only; no guarantee of daily/monthly profitability"
