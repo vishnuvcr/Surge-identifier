@@ -1,20 +1,91 @@
 {
-  "asof_date": "2026-10-19",
-  "generated_at_ist": "2026-10-20T23:00:28.399863+05:30",
+  "asof_date": "2026-10-21",
+  "generated_at_ist": "2026-10-21T23:08:16.466273+05:30",
   "event_definition": "Next session intraday high >= +3% from next session open",
   "universe": "NSE CM EQ series with sufficient median turnover",
   "data_layers": [
     "NSE CM bhavcopy",
     "NSE F&O bhavcopy / positioning context"
   ],
-  "candidates": [],
+  "candidates": [
+    {
+      "symbol": "MTARTECH",
+      "last_close": 6932.0,
+      "surge_probability": 0.8731657266616821,
+      "expected_move_proxy": 0.12,
+      "atr_pct": 0.07861058445305416,
+      "relative_volume": 0.12634180563091157,
+      "turnover_cr": 180.6361356,
+      "risk_flag": "normal",
+      "gap": 0.0002786291446086331,
+      "pcr_deviation": 0.0,
+      "futures_oi_change_z": 0.0,
+      "futures_volume_rel20": 1.0
+    },
+    {
+      "symbol": "ESDS",
+      "last_close": 1364.7,
+      "surge_probability": 0.8642899394035339,
+      "expected_move_proxy": 0.11895236001633012,
+      "atr_pct": 0.06608464445351674,
+      "relative_volume": 0.6324531835166033,
+      "turnover_cr": 101.12263236,
+      "risk_flag": "normal",
+      "gap": 0.0,
+      "pcr_deviation": 0.0,
+      "futures_oi_change_z": 0.0,
+      "futures_volume_rel20": 1.0
+    },
+    {
+      "symbol": "SHANTIGOLD",
+      "last_close": 399.2,
+      "surge_probability": 0.8512434959411621,
+      "expected_move_proxy": 0.10927927283137705,
+      "atr_pct": 0.060710707128542804,
+      "relative_volume": 0.392141789488667,
+      "turnover_cr": 94.58932224,
+      "risk_flag": "normal",
+      "gap": 0.0020499216206439907,
+      "pcr_deviation": 0.0,
+      "futures_oi_change_z": 0.0,
+      "futures_volume_rel20": 1.0
+    },
+    {
+      "symbol": "DELTACORP",
+      "last_close": 73.53,
+      "surge_probability": 0.8463101983070374,
+      "expected_move_proxy": 0.12,
+      "atr_pct": 0.08888500320568862,
+      "relative_volume": 0.39820927171443454,
+      "turnover_cr": 67.077985149,
+      "risk_flag": "normal",
+      "gap": -0.024710625568994726,
+      "pcr_deviation": 0.0,
+      "futures_oi_change_z": 0.0,
+      "futures_volume_rel20": 1.0
+    },
+    {
+      "symbol": "SYMBIOTEC",
+      "last_close": 1208.4,
+      "surge_probability": 0.8559408187866211,
+      "expected_move_proxy": 0.10013122428713297,
+      "atr_pct": 0.055628457937296094,
+      "relative_volume": 0.3299486704408833,
+      "turnover_cr": 52.18850004,
+      "risk_flag": "normal",
+      "gap": 0.0011303084127241014,
+      "pcr_deviation": 0.0,
+      "futures_oi_change_z": 0.0,
+      "futures_volume_rel20": 1.0
+    }
+  ],
   "model": {
     "type": "PyTorch MLP with LayerNorm/GELU/Dropout",
     "features": 32,
-    "threshold": 0.885,
-    "validation_precision": 0.5833333333333334,
-    "validation_recall_sensitivity": 0.0015398152221733391,
-    "validation_specificity": 0.999809795530195,
+    "threshold": 0.8400000000000001,
+    "validation_precision": 0.47692307692307695,
+    "validation_recall_sensitivity": 0.0034629133154602323,
+    "validation_specificity": 0.9993550345246225,
     "validation_window_days": 60
   },
   "research_status": "signal-ranking research only; no guarantee of daily/monthly profitability"
