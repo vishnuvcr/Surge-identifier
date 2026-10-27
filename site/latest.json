@@ -1,91 +1,20 @@
 {
-  "asof_date": "2026-10-26",
-  "generated_at_ist": "2026-10-27T00:22:50.685458+05:30",
+  "asof_date": "2026-10-27",
+  "generated_at_ist": "2026-10-27T23:44:18.476407+05:30",
   "event_definition": "Next session intraday high >= +3% from next session open",
   "universe": "NSE CM EQ series with sufficient median turnover",
   "data_layers": [
     "NSE CM bhavcopy",
     "NSE F&O bhavcopy / positioning context"
   ],
-  "candidates": [
-    {
-      "symbol": "PCJEWELLER",
-      "last_close": 16.51,
-      "surge_probability": 0.8267568945884705,
-      "expected_move_proxy": 0.12,
-      "atr_pct": 0.08310980358224451,
-      "relative_volume": 1.5085890105646118,
-      "turnover_cr": 1877.0929854560002,
-      "risk_flag": "normal",
-      "gap": -0.0077605321507761005,
-      "pcr_deviation": 0.0,
-      "futures_oi_change_z": 0.0,
-      "futures_volume_rel20": 1.0
-    },
-    {
-      "symbol": "NETWEB",
-      "last_close": 4286.0,
-      "surge_probability": 0.8432990908622742,
-      "expected_move_proxy": 0.10014232384507692,
-      "atr_pct": 0.055634624358376066,
-      "relative_volume": 2.6373090329670577,
-      "turnover_cr": 1627.6307872,
-      "risk_flag": "large_gap",
-      "gap": 0.04497439918815438,
-      "pcr_deviation": 0.0,
-      "futures_oi_change_z": 0.0,
-      "futures_volume_rel20": 1.0
-    },
-    {
-      "symbol": "UJJIVANSFB",
-      "last_close": 55.0,
-      "surge_probability": 0.8316805958747864,
-      "expected_move_proxy": 0.09862597402597403,
-      "atr_pct": 0.054792207792207795,
-      "relative_volume": 1.8217505906190874,
-      "turnover_cr": 204.0534155,
-      "risk_flag": "normal",
-      "gap": -0.008605851979345935,
-      "pcr_deviation": 0.10107714022997227,
-      "futures_oi_change_z": 0.0,
-      "futures_volume_rel20": 1.0
-    },
-    {
-      "symbol": "DEEPA",
-      "last_close": 207.81,
-      "surge_probability": 0.8334628939628601,
-      "expected_move_proxy": 0.12,
-      "atr_pct": 0.10074106154660509,
-      "relative_volume": 0.9967373774663282,
-      "turnover_cr": 141.383782872,
-      "risk_flag": "very_high_volatility",
-      "gap": -0.005388024680629044,
-      "pcr_deviation": 0.0,
-      "futures_oi_change_z": 0.0,
-      "futures_volume_rel20": 1.0
-    },
-    {
-      "symbol": "BELRISE",
-      "last_close": 202.44,
-      "surge_probability": 0.8520572185516357,
-      "expected_move_proxy": 0.08816580574138369,
-      "atr_pct": 0.048981003189657604,
-      "relative_volume": 2.5917605156688124,
-      "turnover_cr": 140.984297244,
-      "risk_flag": "normal",
-      "gap": 0.002156228560227458,
-      "pcr_deviation": 0.0,
-      "futures_oi_change_z": 0.0,
-      "futures_volume_rel20": 1.0
-    }
-  ],
+  "candidates": [],
   "model": {
     "type": "PyTorch MLP with LayerNorm/GELU/Dropout",
     "features": 32,
-    "threshold": 0.825,
-    "validation_precision": 0.4097222222222222,
-    "validation_recall_sensitivity": 0.012995594713656388,
-    "validation_specificity": 0.9967823140840005,
+    "threshold": 0.86,
+    "validation_precision": 0.6428571428571429,
+    "validation_recall_sensitivity": 0.00192822710230316,
+    "validation_specificity": 0.9998100231771724,
     "validation_window_days": 60
   },
   "research_status": "signal-ranking research only; no guarantee of daily/monthly profitability"
