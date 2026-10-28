@@ -1,20 +1,35 @@
 {
-  "asof_date": "2026-10-27",
-  "generated_at_ist": "2026-10-27T23:44:18.476407+05:30",
+  "asof_date": "2026-10-28",
+  "generated_at_ist": "2026-10-29T00:00:25.112404+05:30",
   "event_definition": "Next session intraday high >= +3% from next session open",
   "universe": "NSE CM EQ series with sufficient median turnover",
   "data_layers": [
     "NSE CM bhavcopy",
     "NSE F&O bhavcopy / positioning context"
   ],
-  "candidates": [],
+  "candidates": [
+    {
+      "symbol": "PPLPHARMA",
+      "last_close": 232.8,
+      "surge_probability": 0.8975893259048462,
+      "expected_move_proxy": 0.06873711340206182,
+      "atr_pct": 0.03818728522336767,
+      "relative_volume": 14.586488122789797,
+      "turnover_cr": 2748.72146784,
+      "risk_flag": "large_gap",
+      "gap": 0.07739533011272148,
+      "pcr_deviation": 0.0,
+      "futures_oi_change_z": 0.0,
+      "futures_volume_rel20": 1.0
+    }
+  ],
   "model": {
     "type": "PyTorch MLP with LayerNorm/GELU/Dropout",
     "features": 32,
-    "threshold": 0.86,
-    "validation_precision": 0.6428571428571429,
-    "validation_recall_sensitivity": 0.00192822710230316,
-    "validation_specificity": 0.9998100231771724,
+    "threshold": 0.87,
+    "validation_precision": 0.6153846153846154,
+    "validation_recall_sensitivity": 0.0017230239069567091,
+    "validation_specificity": 0.9998104121639556,
     "validation_window_days": 60
   },
   "research_status": "signal-ranking research only; no guarantee of daily/monthly profitability"
