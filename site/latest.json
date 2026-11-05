@@ -1,35 +1,20 @@
 {
-  "asof_date": "2026-11-04",
-  "generated_at_ist": "2026-11-05T01:31:27.379694+05:30",
+  "asof_date": "2026-11-05",
+  "generated_at_ist": "2026-11-06T01:45:49.061175+05:30",
   "event_definition": "Next session intraday high >= +3% from next session open",
   "universe": "NSE CM EQ series with sufficient median turnover",
   "data_layers": [
     "NSE CM bhavcopy",
     "NSE F&O bhavcopy / positioning context"
   ],
-  "candidates": [
-    {
-      "symbol": "HEGAM",
-      "last_close": 288.18,
-      "surge_probability": 0.8906398415565491,
-      "expected_move_proxy": 0.09229053270277507,
-      "atr_pct": 0.05127251816820837,
-      "relative_volume": 10.147619689898047,
-      "turnover_cr": 620.3015423100001,
-      "risk_flag": "large_gap",
-      "gap": 0.04712041884816753,
-      "pcr_deviation": 0.0,
-      "futures_oi_change_z": 0.0,
-      "futures_volume_rel20": 1.0
-    }
-  ],
+  "candidates": [],
   "model": {
     "type": "PyTorch MLP with LayerNorm/GELU/Dropout",
     "features": 32,
-    "threshold": 0.865,
-    "validation_precision": 0.6896551724137931,
-    "validation_recall_sensitivity": 0.0019843238416509573,
-    "validation_specificity": 0.9998281360398724,
+    "threshold": 0.855,
+    "validation_precision": 0.7272727272727273,
+    "validation_recall_sensitivity": 0.0015706292333366055,
+    "validation_specificity": 0.9998853342506593,
     "validation_window_days": 60
   },
   "research_status": "signal-ranking research only; no guarantee of daily/monthly profitability"
