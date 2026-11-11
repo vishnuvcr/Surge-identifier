@@ -1,35 +1,20 @@
 {
-  "asof_date": "2026-11-09",
-  "generated_at_ist": "2026-11-11T01:29:19.198436+05:30",
+  "asof_date": "2026-11-11",
+  "generated_at_ist": "2026-11-12T01:21:35.478837+05:30",
   "event_definition": "Next session intraday high >= +3% from next session open",
   "universe": "NSE CM EQ series with sufficient median turnover",
   "data_layers": [
     "NSE CM bhavcopy",
     "NSE F&O bhavcopy / positioning context"
   ],
-  "candidates": [
-    {
-      "symbol": "KPEL",
-      "last_close": 204.9,
-      "surge_probability": 0.8775757551193237,
-      "expected_move_proxy": 0.10332148086174436,
-      "atr_pct": 0.05740082270096909,
-      "relative_volume": 12.372114591753352,
-      "turnover_cr": 218.34115314000002,
-      "risk_flag": "normal",
-      "gap": 0.014875549048316117,
-      "pcr_deviation": 0.0,
-      "futures_oi_change_z": 0.0,
-      "futures_volume_rel20": 1.0
-    }
-  ],
+  "candidates": [],
   "model": {
     "type": "PyTorch MLP with LayerNorm/GELU/Dropout",
     "features": 32,
-    "threshold": 0.87,
-    "validation_precision": 0.55,
-    "validation_recall_sensitivity": 0.0010851336687382855,
-    "validation_specificity": 0.999828159010196,
+    "threshold": 0.86,
+    "validation_precision": 0.5862068965517241,
+    "validation_recall_sensitivity": 0.003289473684210526,
+    "validation_specificity": 0.9995415560352238,
     "validation_window_days": 60
   },
   "research_status": "signal-ranking research only; no guarantee of daily/monthly profitability"
