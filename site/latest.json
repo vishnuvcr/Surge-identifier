@@ -1,6 +1,6 @@
 {
-  "asof_date": "2026-11-13",
-  "generated_at_ist": "2026-11-14T01:30:42.915028+05:30",
+  "asof_date": "2026-11-16",
+  "generated_at_ist": "2026-11-17T03:59:36.901508+05:30",
   "event_definition": "Next session intraday high >= +3% from next session open",
   "universe": "NSE CM EQ series with sufficient median turnover",
   "data_layers": [
@@ -9,15 +9,15 @@
   ],
   "candidates": [
     {
-      "symbol": "MSTCLTD",
-      "last_close": 783.35,
-      "surge_probability": 0.9023743271827698,
-      "expected_move_proxy": 0.08738294322005315,
-      "atr_pct": 0.04854607956669619,
-      "relative_volume": 10.623576134125617,
-      "turnover_cr": 495.716491935,
-      "risk_flag": "large_gap",
-      "gap": 0.07238051470588225,
+      "symbol": "YATRA",
+      "last_close": 93.75,
+      "surge_probability": 0.9063928723335266,
+      "expected_move_proxy": 0.10618971428571433,
+      "atr_pct": 0.058994285714285735,
+      "relative_volume": 13.900278284932837,
+      "turnover_cr": 543.0777,
+      "risk_flag": "normal",
+      "gap": 0.011135287341610178,
       "pcr_deviation": 0.0,
       "futures_oi_change_z": 0.0,
       "futures_volume_rel20": 1.0
@@ -26,10 +26,10 @@
   "model": {
     "type": "PyTorch MLP with LayerNorm/GELU/Dropout",
     "features": 32,
-    "threshold": 0.885,
-    "validation_precision": 0.5416666666666666,
-    "validation_recall_sensitivity": 0.001247840276444615,
-    "validation_specificity": 0.9997901404151404,
+    "threshold": 0.88,
+    "validation_precision": 0.6086956521739131,
+    "validation_recall_sensitivity": 0.0013457656445256176,
+    "validation_specificity": 0.9998283949204897,
     "validation_window_days": 60
   },
   "research_status": "signal-ranking research only; no guarantee of daily/monthly profitability"
