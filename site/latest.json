@@ -1,6 +1,6 @@
 {
-  "asof_date": "2026-11-18",
-  "generated_at_ist": "2026-11-19T02:23:31.909805+05:30",
+  "asof_date": "2026-11-19",
+  "generated_at_ist": "2026-11-20T02:28:09.464627+05:30",
   "event_definition": "Next session intraday high >= +3% from next session open",
   "universe": "NSE CM EQ series with sufficient median turnover",
   "data_layers": [
@@ -11,10 +11,10 @@
   "model": {
     "type": "PyTorch MLP with LayerNorm/GELU/Dropout",
     "features": 32,
-    "threshold": 0.875,
-    "validation_precision": 0.6785714285714286,
-    "validation_recall_sensitivity": 0.0018248175182481751,
-    "validation_specificity": 0.999828705201652,
+    "threshold": 0.88,
+    "validation_precision": 0.6451612903225806,
+    "validation_recall_sensitivity": 0.001913143294432753,
+    "validation_specificity": 0.9997904442581727,
     "validation_window_days": 60
   },
   "research_status": "signal-ranking research only; no guarantee of daily/monthly profitability"
