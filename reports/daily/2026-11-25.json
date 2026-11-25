@@ -1,0 +1,36 @@
+{
+  "asof_date": "2026-11-25",
+  "generated_at_ist": "2026-11-26T03:29:19.740736+05:30",
+  "event_definition": "Next session intraday high >= +3% from next session open",
+  "universe": "NSE CM EQ series with sufficient median turnover",
+  "data_layers": [
+    "NSE CM bhavcopy",
+    "NSE F&O bhavcopy / positioning context"
+  ],
+  "candidates": [
+    {
+      "symbol": "JWL",
+      "last_close": 222.46,
+      "surge_probability": 0.910353422164917,
+      "expected_move_proxy": 0.0807862729736325,
+      "atr_pct": 0.04488126276312916,
+      "relative_volume": 10.34505182743166,
+      "turnover_cr": 1416.595603836,
+      "risk_flag": "normal",
+      "gap": 0.039268568962727235,
+      "pcr_deviation": 0.0,
+      "futures_oi_change_z": 0.0,
+      "futures_volume_rel20": 1.0
+    }
+  ],
+  "model": {
+    "type": "PyTorch MLP with LayerNorm/GELU/Dropout",
+    "features": 32,
+    "threshold": 0.89,
+    "validation_precision": 0.6666666666666666,
+    "validation_recall_sensitivity": 0.0013314312886352829,
+    "validation_specificity": 0.9998670768295925,
+    "validation_window_days": 60
+  },
+  "research_status": "signal-ranking research only; no guarantee of daily/monthly profitability"
+}
