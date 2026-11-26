@@ -1,0 +1,21 @@
+{
+  "asof_date": "2026-11-26",
+  "generated_at_ist": "2026-11-27T03:23:39.840287+05:30",
+  "event_definition": "Next session intraday high >= +3% from next session open",
+  "universe": "NSE CM EQ series with sufficient median turnover",
+  "data_layers": [
+    "NSE CM bhavcopy",
+    "NSE F&O bhavcopy / positioning context"
+  ],
+  "candidates": [],
+  "model": {
+    "type": "PyTorch MLP with LayerNorm/GELU/Dropout",
+    "features": 32,
+    "threshold": 0.865,
+    "validation_precision": 0.6666666666666666,
+    "validation_recall_sensitivity": 0.001893939393939394,
+    "validation_specificity": 0.9998096253426744,
+    "validation_window_days": 60
+  },
+  "research_status": "signal-ranking research only; no guarantee of daily/monthly profitability"
+}
